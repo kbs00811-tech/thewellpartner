@@ -40,29 +40,31 @@
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
   
-  /* TheWell Partner Brand Colors */
-  --brand-navy: #0f1d36;
-  --brand-navy-light: #1a2d4a;
-  --brand-blue: #2563eb;
-  --brand-light-blue: #60a5fa;
-  --brand-sky: #eff6ff;
-  --brand-cta: #3b82f6;
-  --brand-cta-light: #60a5fa;
+  /* TheWell Partner Brand Colors — Deep Navy Tech */
+  --brand-navy: #0F172A;
+  --brand-navy-light: #1E293B;
+  --brand-blue: #3B82F6;
+  --brand-light-blue: #60A5FA;
+  --brand-sky: #EFF6FF;
+  --brand-cta: #3B82F6;
+  --brand-cta-light: #60A5FA;
+  --brand-cta-glow: rgba(59, 130, 246, 0.25);
   /* Legacy aliases */
   --brand-orange: var(--brand-cta);
   --brand-orange-light: var(--brand-cta-light);
-  --brand-red: #ef4444;
-  --brand-gray-light: #f8fafc;
-  --brand-gray: #64748b;
+  --brand-red: #EF4444;
+  --brand-gray-light: #F8FAFC;
+  --brand-gray: #94A3B8;
   --brand-gray-dark: #334155;
   /* 2025 Extended palette */
-  --brand-heading: #0f172a;
+  --brand-heading: #0F172A;
   --brand-body: #475569;
-  --brand-body-light: #94a3b8;
-  --brand-section-alt: #f1f5f9;
-  --brand-border: #e2e8f0;
-  --brand-hero-from: #0c1631;
-  --brand-hero-to: #162b52;
+  --brand-body-light: #94A3B8;
+  --brand-section-alt: #F1F5F9;
+  --brand-border: #E2E8F0;
+  --brand-hero-from: #0F172A;
+  --brand-hero-to: #1E293B;
+  --brand-hero-accent: #3B82F6;
 }
 
 .dark {
