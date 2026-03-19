@@ -9,6 +9,67 @@ import { handleError, handleSuccess } from "../../lib/error-handler";
 
 type Tab = "company" | "notification" | "email" | "social" | "seo" | "security";
 
+// 모듈 레벨 컴포넌트 (렌더 함수 밖 — 리마운트 방지)
+function InputField({ label, keyName, type = "text", placeholder = "", disabled = false, value, onChange }: {
+  label: string; keyName: string; type?: string; placeholder?: string; disabled?: boolean;
+  value: any; onChange: (key: string, val: any) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-400 mb-1.5">{label}</label>
+      <input
+        type={type}
+        value={value ?? ""}
+        onChange={(e) => onChange(keyName, e.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)] focus:ring-2 focus:ring-[var(--brand-sky)] transition-all disabled:opacity-50 disabled:bg-gray-50"
+      />
+    </div>
+  );
+}
+
+function TextareaField({ label, keyName, rows = 3, placeholder = "", value, onChange }: {
+  label: string; keyName: string; rows?: number; placeholder?: string;
+  value: any; onChange: (key: string, val: any) => void;
+}) {
+  return (
+    <div className="md:col-span-2">
+      <label className="block text-xs font-semibold text-gray-400 mb-1.5">{label}</label>
+      <textarea
+        value={value ?? ""}
+        onChange={(e) => onChange(keyName, e.target.value)}
+        rows={rows}
+        placeholder={placeholder}
+        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)] focus:ring-2 focus:ring-[var(--brand-sky)] transition-all resize-none"
+      />
+    </div>
+  );
+}
+
+function ToggleField({ label, desc, keyName, checked, onChange }: {
+  label: string; desc: string; keyName: string;
+  checked: boolean; onChange: (key: string, val: any) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
+      <div>
+        <div className="text-sm font-medium" style={{ color: "var(--brand-navy)" }}>{label}</div>
+        <div className="text-xs text-gray-400 mt-0.5">{desc}</div>
+      </div>
+      <label className="relative inline-flex items-center cursor-pointer">
+        <input
+          type="checkbox"
+          checked={checked ?? false}
+          onChange={(e) => onChange(keyName, e.target.checked)}
+          className="sr-only peer"
+        />
+        <div className="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--brand-blue)]" />
+      </label>
+    </div>
+  );
+}
+
 const TABS: { key: Tab; label: string; icon: typeof Building2 }[] = [
   { key: "company", label: "회사정보", icon: Building2 },
   { key: "social", label: "소셜/링크", icon: Share2 },
@@ -104,53 +165,17 @@ export default function AdminSettings() {
     );
   }
 
-  const InputField = ({ label, keyName, type = "text", placeholder = "", disabled = false }: {
-    label: string; keyName: string; type?: string; placeholder?: string; disabled?: boolean;
-  }) => (
-    <div>
-      <label className="block text-xs font-semibold text-gray-400 mb-1.5">{label}</label>
-      <input
-        type={type}
-        value={settings[keyName] ?? ""}
-        onChange={(e) => update(keyName, e.target.value)}
-        placeholder={placeholder}
-        disabled={disabled}
-        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)] focus:ring-2 focus:ring-[var(--brand-sky)] transition-all disabled:opacity-50 disabled:bg-gray-50"
-      />
-    </div>
+  // InputField/TextareaField/ToggleField는 모듈 레벨에 정의됨 (위 참조)
+  // JSX에서 value={settings[keyName]} onChange={update} 전달 필요
+  // 이전 호출 형태 유지를 위한 래퍼 — 단순히 props를 바인딩
+  const I = (props: { label: string; keyName: string; type?: string; placeholder?: string; disabled?: boolean }) => (
+    <InputField {...props} value={settings[props.keyName]} onChange={update} />
   );
-
-  const TextareaField = ({ label, keyName, rows = 3, placeholder = "" }: {
-    label: string; keyName: string; rows?: number; placeholder?: string;
-  }) => (
-    <div className="md:col-span-2">
-      <label className="block text-xs font-semibold text-gray-400 mb-1.5">{label}</label>
-      <textarea
-        value={settings[keyName] ?? ""}
-        onChange={(e) => update(keyName, e.target.value)}
-        rows={rows}
-        placeholder={placeholder}
-        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)] focus:ring-2 focus:ring-[var(--brand-sky)] transition-all resize-none"
-      />
-    </div>
+  const T = (props: { label: string; keyName: string; rows?: number; placeholder?: string }) => (
+    <TextareaField {...props} value={settings[props.keyName]} onChange={update} />
   );
-
-  const ToggleField = ({ label, desc, keyName }: { label: string; desc: string; keyName: string }) => (
-    <div className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
-      <div>
-        <div className="text-sm font-medium" style={{ color: "var(--brand-navy)" }}>{label}</div>
-        <div className="text-xs text-gray-400 mt-0.5">{desc}</div>
-      </div>
-      <label className="relative inline-flex items-center cursor-pointer">
-        <input
-          type="checkbox"
-          checked={settings[keyName] ?? false}
-          onChange={(e) => update(keyName, e.target.checked)}
-          className="sr-only peer"
-        />
-        <div className="w-10 h-5.5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-[var(--brand-blue)]"></div>
-      </label>
-    </div>
+  const Tg = (props: { label: string; desc: string; keyName: string }) => (
+    <ToggleField {...props} checked={settings[props.keyName]} onChange={update} />
   );
 
   const SectionCard = ({ icon: Icon, iconBg, iconColor, title, desc, children }: {
@@ -226,22 +251,22 @@ export default function AdminSettings() {
         <div className="space-y-6 max-w-4xl">
           <SectionCard icon={Building2} iconBg="var(--brand-sky)" iconColor="var(--brand-blue)" title="기본 정보" desc="서류 발급 및 홈페이지에 표시되는 정보">
             <div className="grid md:grid-cols-2 gap-4">
-              <InputField label="회사명" keyName="company_name" />
-              <InputField label="대표자명" keyName="ceo_name" />
-              <InputField label="사업자번호" keyName="business_no" />
-              <InputField label="설립연도" keyName="founded_year" placeholder="2010" />
-              <InputField label="대표번호" keyName="phone" />
-              <InputField label="이메일" keyName="email" type="email" />
-              <InputField label="본사 주소" keyName="address" />
-              <InputField label="영업시간" keyName="business_hours" />
+              <I label="회사명" keyName="company_name" />
+              <I label="대표자명" keyName="ceo_name" />
+              <I label="사업자번호" keyName="business_no" />
+              <I label="설립연도" keyName="founded_year" placeholder="2010" />
+              <I label="대표번호" keyName="phone" />
+              <I label="이메일" keyName="email" type="email" />
+              <I label="본사 주소" keyName="address" />
+              <I label="영업시간" keyName="business_hours" />
             </div>
           </SectionCard>
 
           <SectionCard icon={MapPin} iconBg="rgba(139,92,246,0.1)" iconColor="#8b5cf6" title="지사 정보" desc="지사가 있는 경우 추가 정보를 입력하세요">
             <div className="grid md:grid-cols-2 gap-4">
-              <InputField label="지사 주소" keyName="branch_address" />
-              <InputField label="지사 전화" keyName="branch_phone" />
-              <InputField label="지사 이메일" keyName="branch_email" type="email" />
+              <I label="지사 주소" keyName="branch_address" />
+              <I label="지사 전화" keyName="branch_phone" />
+              <I label="지사 이메일" keyName="branch_email" type="email" />
             </div>
           </SectionCard>
 
@@ -299,12 +324,12 @@ export default function AdminSettings() {
         <div className="space-y-6 max-w-4xl">
           <SectionCard icon={Share2} iconBg="rgba(37,99,235,0.1)" iconColor="var(--brand-blue)" title="소셜 미디어 링크" desc="홈페이지 푸터 및 공유에 표시됩니다">
             <div className="grid md:grid-cols-2 gap-4">
-              <InputField label="네이버 블로그" keyName="social_blog" placeholder="https://blog.naver.com/..." />
-              <InputField label="인스타그램" keyName="social_instagram" placeholder="https://instagram.com/..." />
-              <InputField label="유튜브" keyName="social_youtube" placeholder="https://youtube.com/@..." />
-              <InputField label="페이스북" keyName="social_facebook" placeholder="https://facebook.com/..." />
-              <InputField label="카카오 채널" keyName="social_kakao_channel" placeholder="https://pf.kakao.com/..." />
-              <InputField label="링크드인" keyName="social_linkedin" placeholder="https://linkedin.com/company/..." />
+              <I label="네이버 블로그" keyName="social_blog" placeholder="https://blog.naver.com/..." />
+              <I label="인스타그램" keyName="social_instagram" placeholder="https://instagram.com/..." />
+              <I label="유튜브" keyName="social_youtube" placeholder="https://youtube.com/@..." />
+              <I label="페이스북" keyName="social_facebook" placeholder="https://facebook.com/..." />
+              <I label="카카오 채널" keyName="social_kakao_channel" placeholder="https://pf.kakao.com/..." />
+              <I label="링크드인" keyName="social_linkedin" placeholder="https://linkedin.com/company/..." />
             </div>
             <div className="mt-4 p-3 rounded-xl bg-blue-50 text-xs text-blue-700">
               <strong>안내:</strong> 입력한 링크는 홈페이지 푸터에 아이콘으로 표시됩니다. 비워두면 해당 아이콘이 숨겨집니다.
@@ -319,14 +344,14 @@ export default function AdminSettings() {
           <SectionCard icon={Globe} iconBg="rgba(37,99,235,0.1)" iconColor="var(--brand-blue)" title="사이트 메타 정보" desc="검색엔진 최적화(SEO) 및 소셜 공유 미리보기">
             <div className="grid md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
-                <InputField label="사이트 제목 (title)" keyName="site_title" placeholder="더웰파트너 | 생산도급 및 인력 채용 전문기업" />
+                <I label="사이트 제목 (title)" keyName="site_title" placeholder="더웰파트너 | 생산도급 및 인력 채용 전문기업" />
               </div>
-              <TextareaField label="사이트 설명 (description)" keyName="site_description" placeholder="검색 결과에 표시되는 설명문입니다." rows={3} />
+              <T label="사이트 설명 (description)" keyName="site_description" placeholder="검색 결과에 표시되는 설명문입니다." rows={3} />
               <div className="md:col-span-2">
-                <InputField label="키워드 (keywords)" keyName="site_keywords" placeholder="생산도급, 인력파견, 채용" />
+                <I label="키워드 (keywords)" keyName="site_keywords" placeholder="생산도급, 인력파견, 채용" />
               </div>
               <div className="md:col-span-2">
-                <InputField label="OG 이미지 URL" keyName="og_image_url" placeholder="https://..." />
+                <I label="OG 이미지 URL" keyName="og_image_url" placeholder="https://..." />
               </div>
             </div>
             <div className="mt-4 p-3 rounded-xl bg-blue-50 text-xs text-blue-700">
@@ -381,10 +406,10 @@ export default function AdminSettings() {
         <div className="space-y-6 max-w-4xl">
           <SectionCard icon={Bell} iconBg="rgba(42,125,225,0.1)" iconColor="var(--brand-blue)" title="알림 설정" desc="문자 및 이메일 알림 설정">
             <div className="space-y-1">
-              <ToggleField label="문의 접수 시 이메일 알림" desc="새로운 문의가 접수되면 관리자에게 이메일 발송" keyName="notify_inquiry_email" />
-              <ToggleField label="지원자 접수 시 이메일 알림" desc="새로운 지원자가 접수되면 채용담당자에게 알림" keyName="notify_applicant_email" />
-              <ToggleField label="서류 발급 시 로그 알림" desc="서류 발급 시 관리자에게 실시간 알림" keyName="notify_document_log" />
-              <ToggleField label="인증 실패 시 경고 알림" desc="인증 실패 3회 이상 시 보안 경고" keyName="notify_auth_fail" />
+              <Tg label="문의 접수 시 이메일 알림" desc="새로운 문의가 접수되면 관리자에게 이메일 발송" keyName="notify_inquiry_email" />
+              <Tg label="지원자 접수 시 이메일 알림" desc="새로운 지원자가 접수되면 채용담당자에게 알림" keyName="notify_applicant_email" />
+              <Tg label="서류 발급 시 로그 알림" desc="서류 발급 시 관리자에게 실시간 알림" keyName="notify_document_log" />
+              <Tg label="인증 실패 시 경고 알림" desc="인증 실패 3회 이상 시 보안 경고" keyName="notify_auth_fail" />
             </div>
           </SectionCard>
         </div>
@@ -395,10 +420,10 @@ export default function AdminSettings() {
         <div className="space-y-6 max-w-4xl">
           <SectionCard icon={Mail} iconBg="rgba(139,92,246,0.1)" iconColor="#8b5cf6" title="SMTP 설정" desc="알림 발송에 사용되는 이메일 설정">
             <div className="grid md:grid-cols-2 gap-4">
-              <InputField label="SMTP 서버" keyName="smtp_server" />
-              <InputField label="포트" keyName="smtp_port" />
-              <InputField label="발신 이메일" keyName="smtp_email" type="email" />
-              <InputField label="비밀번호" keyName="smtp_password" type="password" />
+              <I label="SMTP 서버" keyName="smtp_server" />
+              <I label="포트" keyName="smtp_port" />
+              <I label="발신 이메일" keyName="smtp_email" type="email" />
+              <I label="비밀번호" keyName="smtp_password" type="password" />
             </div>
             <div className="mt-4 p-3 rounded-xl bg-yellow-50 text-xs text-yellow-700">
               <strong>주의:</strong> SMTP 비밀번호는 암호화되어 저장됩니다. 실제 연동 전 테스트 메일 발송을 권장합니다.
@@ -407,8 +432,8 @@ export default function AdminSettings() {
 
           <SectionCard icon={Upload} iconBg="rgba(15,157,88,0.1)" iconColor="#0f9d58" title="파일 업로드 설정" desc="파일 업로드 제한 설정">
             <div className="grid md:grid-cols-2 gap-4">
-              <InputField label="허용 파일 형식" keyName="allowed_file_types" />
-              <InputField label="최대 용량" keyName="max_file_size" />
+              <I label="허용 파일 형식" keyName="allowed_file_types" />
+              <I label="최대 용량" keyName="max_file_size" />
             </div>
           </SectionCard>
         </div>
@@ -419,9 +444,9 @@ export default function AdminSettings() {
         <div className="space-y-6 max-w-4xl">
           <SectionCard icon={Lock} iconBg="rgba(239,68,68,0.1)" iconColor="#ef4444" title="로그인 보안" desc="관리자 로그인 보안 설정">
             <div className="grid md:grid-cols-2 gap-4">
-              <InputField label="최대 로그인 시도 횟수" keyName="login_max_attempts" placeholder="5" />
-              <InputField label="잠금 시간 (분)" keyName="login_lockout_min" placeholder="15" />
-              <InputField label="세션 유효시간 (시간)" keyName="session_timeout_hour" placeholder="24" />
+              <I label="최대 로그인 시도 횟수" keyName="login_max_attempts" placeholder="5" />
+              <I label="잠금 시간 (분)" keyName="login_lockout_min" placeholder="15" />
+              <I label="세션 유효시간 (시간)" keyName="session_timeout_hour" placeholder="24" />
             </div>
             <div className="mt-4 p-3 rounded-xl bg-red-50 text-xs text-red-700">
               <strong>주의:</strong> 보안 설정 변경 시 모든 관리자의 활성 세션에 영향을 줄 수 있습니다.
@@ -430,11 +455,11 @@ export default function AdminSettings() {
 
           <SectionCard icon={FileText} iconBg="rgba(37,99,235,0.1)" iconColor="var(--brand-blue)" title="서류발급 설정" desc="직원 서류발급센터 관련 설정">
             <div className="grid md:grid-cols-2 gap-4">
-              <InputField label="인증 유효시간 (분)" keyName="doc_auth_expiry_min" placeholder="3" />
+              <I label="인증 유효시간 (분)" keyName="doc_auth_expiry_min" placeholder="3" />
               <div />
             </div>
             <div className="mt-4 space-y-1">
-              <ToggleField label="데모 모드" desc="데모 모드에서는 인증번호를 화면에 직접 표시합니다" keyName="doc_demo_mode" />
+              <Tg label="데모 모드" desc="데모 모드에서는 인증번호를 화면에 직접 표시합니다" keyName="doc_demo_mode" />
             </div>
             <div className="mt-3 p-3 rounded-xl bg-blue-50 text-xs text-blue-700">
               <strong>안내:</strong> 실제 서비스 운영 시 데모 모드를 해제하고, 카카오 비즈니스 채널 및 SMS API를 연동하세요.
