@@ -67,7 +67,7 @@ export function useAuth(options?: { onExpired?: () => void }): UseAuthReturn {
     const currentUser = api.getUser();
     api.auditLogs.log("로그아웃", `${currentUser?.name || "관리자"} 로그아웃`).catch(() => {});
     api.logout();
-    window.location.href = "/admin/login";
+    window.location.href = "/manage-twp/login";
   }, []);
 
   return {

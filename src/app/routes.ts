@@ -3,6 +3,9 @@ import { lazy } from "react";
 import Root from "./pages/Root";
 import Home from "./pages/Home";
 
+// 관리자 경로 접두사 (추측 방지용)
+export const ADMIN_BASE = "/manage-twp";
+
 // Public pages — lazy loaded
 const About = lazy(() => import("./pages/About"));
 const Business = lazy(() => import("./pages/Business"));
@@ -57,11 +60,11 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    path: "/admin/login",
+    path: `${ADMIN_BASE}/login`,
     Component: AdminLogin,
   },
   {
-    path: "/admin",
+    path: ADMIN_BASE,
     Component: AdminLayout,
     children: [
       { index: true, Component: AdminDashboard },

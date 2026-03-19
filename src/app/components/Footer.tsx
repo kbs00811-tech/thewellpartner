@@ -197,7 +197,6 @@ export function Footer() {
             <div className="flex gap-5">
               <Link to="/privacy" className="hover:text-gray-400 transition-colors">개인정보처리방침</Link>
               <Link to="/terms" className="hover:text-gray-400 transition-colors">이용약관</Link>
-              <Link to="/admin/login" className="hover:text-gray-400 transition-colors">관리자</Link>
             </div>
           </div>
         </div>

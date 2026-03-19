@@ -2,6 +2,7 @@ import { Link, useLocation, Outlet } from "react-router";
 import { useState, useEffect } from "react";
 import * as api from "../lib/api";
 import { useAuth } from "../hooks/useAuth";
+import { ADMIN_BASE } from "../routes";
 import { validatePasswordStrength } from "../lib/security";
 import {
   LayoutDashboard, Globe, Briefcase, Users, MessageSquare, FileText, BarChart3,
@@ -26,73 +27,74 @@ interface MenuItem {
   badgeKey?: string;
 }
 
+const A = ADMIN_BASE;
 const menuItems: MenuItem[] = [
-  { name: "대시보드", path: "/admin", icon: LayoutDashboard },
+  { name: "대시보드", path: A, icon: LayoutDashboard },
   {
     name: "홈페이지 관리", icon: Globe, permKey: "website",
     children: [
-      { name: "메인 배너 관리", path: "/admin/website/banners", icon: Image },
-      { name: "회사소개 관리", path: "/admin/website/about", icon: Building2 },
-      { name: "사업분야 관리", path: "/admin/website/business", icon: Briefcase },
-      { name: "공지사항", path: "/admin/website/notices", icon: Megaphone },
-      { name: "FAQ", path: "/admin/website/faq", icon: HelpCircle },
-      { name: "자료실", path: "/admin/website/materials", icon: FolderOpen },
+      { name: "메인 배너 관리", path: `${A}/website/banners`, icon: Image },
+      { name: "회사소개 관리", path: `${A}/website/about`, icon: Building2 },
+      { name: "사업분야 관리", path: `${A}/website/business`, icon: Briefcase },
+      { name: "공지사항", path: `${A}/website/notices`, icon: Megaphone },
+      { name: "FAQ", path: `${A}/website/faq`, icon: HelpCircle },
+      { name: "자료실", path: `${A}/website/materials`, icon: FolderOpen },
     ],
   },
   {
     name: "채용 관리", icon: Briefcase, permKey: "recruit", badgeKey: "applicants",
     children: [
-      { name: "채용공고 관리", path: "/admin/recruit", icon: ClipboardList },
-      { name: "지원자 관리", path: "/admin/applicants", icon: UserCheck },
-      { name: "인재풀 관리", path: "/admin/talent-pool", icon: Database },
-      { name: "채용 통계", path: "/admin/recruit/stats", icon: TrendingUp },
+      { name: "채용공고 관리", path: `${A}/recruit`, icon: ClipboardList },
+      { name: "지원자 관리", path: `${A}/applicants`, icon: UserCheck },
+      { name: "인재풀 관리", path: `${A}/talent-pool`, icon: Database },
+      { name: "채용 통계", path: `${A}/recruit/stats`, icon: TrendingUp },
     ],
   },
   {
     name: "문의 관리", icon: MessageSquare, permKey: "inquiries", badgeKey: "inquiries",
     children: [
-      { name: "기업 문의", path: "/admin/inquiries?type=company", icon: Building2 },
-      { name: "구직자 문의", path: "/admin/inquiries?type=jobseeker", icon: User },
-      { name: "전체 문의", path: "/admin/inquiries", icon: MessageSquare },
+      { name: "기업 문의", path: `${A}/inquiries?type=company`, icon: Building2 },
+      { name: "구직자 문의", path: `${A}/inquiries?type=jobseeker`, icon: User },
+      { name: "전체 문의", path: `${A}/inquiries`, icon: MessageSquare },
     ],
   },
   {
     name: "서류발급 관리", icon: FileText, permKey: "documents",
     children: [
-      { name: "직원 정보 관리", path: "/admin/employees", icon: Users },
-      { name: "서류 템플릿", path: "/admin/documents/templates", icon: FolderOpen },
-      { name: "급여명세서 관리", path: "/admin/documents/payslips", icon: FileCheck },
-      { name: "발급 로그", path: "/admin/documents/logs", icon: History },
+      { name: "직원 정보 관리", path: `${A}/employees`, icon: Users },
+      { name: "서류 템플릿", path: `${A}/documents/templates`, icon: FolderOpen },
+      { name: "급여명세서 관리", path: `${A}/documents/payslips`, icon: FileCheck },
+      { name: "발급 로그", path: `${A}/documents/logs`, icon: History },
     ],
   },
-  { name: "통계/리포트", path: "/admin/statistics", icon: BarChart3, permKey: "statistics" },
+  { name: "통계/리포트", path: `${A}/statistics`, icon: BarChart3, permKey: "statistics" },
   {
     name: "ERP 인력운영", icon: Factory, permKey: "erp",
     children: [
-      { name: "고객사 관리", path: "/admin/erp/clients", icon: Building2 },
-      { name: "현장 관리", path: "/admin/erp/sites", icon: MapPin },
-      { name: "배치 관리", path: "/admin/erp/placements", icon: ArrowLeftRight },
-      { name: "근태 관리", path: "/admin/erp/attendance", icon: CalendarCheck },
-      { name: "급여명세서", path: "/admin/payroll", icon: FileSpreadsheet },
+      { name: "고객사 관리", path: `${A}/erp/clients`, icon: Building2 },
+      { name: "현장 관리", path: `${A}/erp/sites`, icon: MapPin },
+      { name: "배치 관리", path: `${A}/erp/placements`, icon: ArrowLeftRight },
+      { name: "근태 관리", path: `${A}/erp/attendance`, icon: CalendarCheck },
+      { name: "급여명세서", path: `${A}/payroll`, icon: FileSpreadsheet },
     ],
   },
   {
     name: "외국인 인력관리", icon: Globe2, permKey: "foreign",
     children: [
-      { name: "현황 대시보드", path: "/admin/erp/foreign", icon: BarChart3 },
-      { name: "비자 관리", path: "/admin/erp/foreign/visa", icon: FileText },
-      { name: "체류 기록", path: "/admin/erp/foreign/stay", icon: CalendarCheck },
+      { name: "현황 대시보드", path: `${A}/erp/foreign`, icon: BarChart3 },
+      { name: "비자 관리", path: `${A}/erp/foreign/visa`, icon: FileText },
+      { name: "체류 기록", path: `${A}/erp/foreign/stay`, icon: CalendarCheck },
     ],
   },
   {
     name: "회원/권한 관리", icon: Shield, permKey: "users",
     children: [
-      { name: "관리자 계정", path: "/admin/users", icon: UserCog },
-      { name: "권한 그룹", path: "/admin/permissions", icon: KeyRound },
-      { name: "접속 로그", path: "/admin/access-logs", icon: MonitorSmartphone },
+      { name: "관리자 계정", path: `${A}/users`, icon: UserCog },
+      { name: "권한 그룹", path: `${A}/permissions`, icon: KeyRound },
+      { name: "접속 로그", path: `${A}/access-logs`, icon: MonitorSmartphone },
     ],
   },
-  { name: "시스템 설정", path: "/admin/settings", icon: Settings, permKey: "settings" },
+  { name: "시스템 설정", path: `${A}/settings`, icon: Settings, permKey: "settings" },
 ];
 
 function SidebarItem({ item, collapsed }: { item: MenuItem; collapsed: boolean }) {
@@ -275,7 +277,7 @@ export function AdminLayout() {
 
   const { user, isSessionExpiring, handleLogout } = useAuth({
     onExpired: () => {
-      window.location.href = "/admin/login?expired=1";
+      window.location.href = `${A}/login?expired=1`;
     },
   });
 
@@ -312,7 +314,7 @@ export function AdminLayout() {
         >
           {/* Logo */}
           <div className="flex items-center justify-between h-16 px-4 border-b border-gray-100">
-            <Link to="/admin" className="flex items-center gap-2">
+            <Link to={ADMIN_BASE} className="flex items-center gap-2">
               <LogoIcon className="w-8 h-8" />
               {sidebarOpen && <span className="font-bold text-sm" style={{ color: "var(--brand-navy)" }}>더웰파트너</span>}
             </Link>

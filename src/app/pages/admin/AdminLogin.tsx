@@ -51,7 +51,7 @@ export default function AdminLogin() {
     try {
       await api.login(username.trim(), password);
       resetRateLimit(RATE_LIMIT_KEY);
-      navigate("/admin");
+      navigate("/manage-twp");
     } catch (err: any) {
       if (err.message?.includes("아이디") || err.message?.includes("비밀번호")) {
         try {
@@ -60,7 +60,7 @@ export default function AdminLogin() {
           setSeedStatus("시드 완료. 로그인 재시도...");
           await api.login(username.trim(), password);
           resetRateLimit(RATE_LIMIT_KEY);
-          navigate("/admin");
+          navigate("/manage-twp");
           return;
         } catch {
           setSeedStatus("");
