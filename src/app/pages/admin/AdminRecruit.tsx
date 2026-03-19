@@ -140,10 +140,10 @@ export default function AdminRecruit() {
               { key: "work_location", label: "근무지", placeholder: "예: 경기도 화성시" },
               { key: "job_category", label: "직무", placeholder: "예: 반도체" },
               { key: "employment_type", label: "근무형태", placeholder: "정규직 / 계약직" },
-              { key: "salary_min", label: "최소급여", placeholder: "예: 2800000" },
-              { key: "salary_max", label: "최대급여", placeholder: "예: 3200000" },
+              { key: "salary_min", label: "최소급여", placeholder: "예: 2800000", type: "number" },
+              { key: "salary_max", label: "최대급여", placeholder: "예: 3200000", type: "number" },
               { key: "working_hours", label: "근무시간", placeholder: "예: 주간 2교대" },
-              { key: "recruitment_count", label: "모집인원", placeholder: "예: 10" },
+              { key: "recruitment_count", label: "모집인원", placeholder: "예: 10", type: "number" },
             ].map((field) => (
               <div key={field.key}>
                 <label className="block text-xs font-semibold text-gray-500 mb-1.5">{field.label}</label>
@@ -232,10 +232,10 @@ export default function AdminRecruit() {
                 { key: "work_location", label: "근무지" },
                 { key: "job_category", label: "직무" },
                 { key: "employment_type", label: "근무형태" },
-                { key: "salary_min", label: "최소급여" },
-                { key: "salary_max", label: "최대급여" },
+                { key: "salary_min", label: "최소급여", type: "number" },
+                { key: "salary_max", label: "최대급여", type: "number" },
                 { key: "working_hours", label: "근무시간" },
-                { key: "recruitment_count", label: "모집인원" },
+                { key: "recruitment_count", label: "모집인원", type: "number" },
                 { key: "deadline_at", label: "마감일", type: "date" },
               ].map((f) => (
                 <div key={f.key}>
