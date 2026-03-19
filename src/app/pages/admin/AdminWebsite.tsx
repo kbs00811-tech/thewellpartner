@@ -511,7 +511,7 @@ export default function AdminWebsite() {
                   <p className="text-xs text-gray-400 mt-0.5">{biz.desc}</p>
                 </div>
               </div>
-              <textarea rows={4} className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm" value={(businessData as any)[biz.key] || ""} onChange={(e) => setBusinessData({ ...businessData, [biz.key]: e.target.value })} placeholder={`${biz.label} 상세 설명을 입력하세요...`} />
+              <textarea rows={4} className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm" value={(businessData as any)[biz.key] ?? ""} onChange={(e) => setBusinessData({ ...businessData, [biz.key]: e.target.value })} placeholder={`${biz.label} 상세 설명을 입력하세요...`} />
             </div>
           ))}
           <button onClick={() => handleSaveContent("business")} disabled={savingContent} className="w-full py-3 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:shadow-lg hover:shadow-blue-500/25" style={{ backgroundColor: "var(--brand-blue)" }}>

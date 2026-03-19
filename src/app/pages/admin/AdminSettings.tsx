@@ -111,7 +111,7 @@ export default function AdminSettings() {
       <label className="block text-xs font-semibold text-gray-400 mb-1.5">{label}</label>
       <input
         type={type}
-        value={settings[keyName] || ""}
+        value={settings[keyName] ?? ""}
         onChange={(e) => update(keyName, e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
@@ -126,7 +126,7 @@ export default function AdminSettings() {
     <div className="md:col-span-2">
       <label className="block text-xs font-semibold text-gray-400 mb-1.5">{label}</label>
       <textarea
-        value={settings[keyName] || ""}
+        value={settings[keyName] ?? ""}
         onChange={(e) => update(keyName, e.target.value)}
         rows={rows}
         placeholder={placeholder}

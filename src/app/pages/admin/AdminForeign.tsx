@@ -330,7 +330,7 @@ export default function AdminForeign() {
                 ].map(f => (
                   <div key={f.key}>
                     <label className="block text-xs font-semibold text-gray-500 mb-1.5">{f.label}</label>
-                    <input type="text" placeholder={f.placeholder} value={formData[f.key] || ""} onChange={e => setFormData({ ...formData, [f.key]: e.target.value })} className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)]" />
+                    <input type="text" placeholder={f.placeholder} value={formData[f.key] ?? ""} onChange={e => setFormData({ ...formData, [f.key]: e.target.value })} className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)]" />
                   </div>
                 ))}
                 <div>

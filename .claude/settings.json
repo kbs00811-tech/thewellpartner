@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh auth:*)"
+      "Bash(gh auth:*)",
+      "Bash(curl -s http://localhost:4174/manage-twp/login)",
+      "Bash(grep -rn 'value={.*\\\\[.*\\\\] || \"\"\"\"}' src/app/pages/admin/)"
     ]
   }
 }

@@ -147,7 +147,7 @@ export default function AdminRecruit() {
             ].map((field) => (
               <div key={field.key}>
                 <label className="block text-xs font-semibold text-gray-500 mb-1.5">{field.label}</label>
-                <input type="text" placeholder={field.placeholder} value={formData[field.key] || ""} onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })} className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)]" />
+                <input type={field.type || "text"} placeholder={field.placeholder} value={formData[field.key] ?? ""} onChange={(e) => setFormData({ ...formData, [field.key]: e.target.value })} className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)]" />
               </div>
             ))}
           </div>
@@ -242,7 +242,7 @@ export default function AdminRecruit() {
                   <label className="block text-xs font-semibold text-gray-500 mb-1.5">{f.label}</label>
                   <input
                     type={f.type || "text"}
-                    value={editingJob[f.key] || ""}
+                    value={editingJob[f.key] ?? ""}
                     onChange={(e) => setEditingJob({ ...editingJob, [f.key]: e.target.value })}
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)]"
                   />
