@@ -163,6 +163,16 @@ export default function AdminSettings() {
   }, [settings]);
 
   const handleFileUpload = async (type: "logo" | "stamp", file: File) => {
+    // 파일 크기 제한 (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      handleError(new Error("파일 크기는 5MB 이하만 가능합니다."), {});
+      return;
+    }
+    // 이미지만 허용
+    if (!file.type.startsWith("image/")) {
+      handleError(new Error("이미지 파일만 업로드 가능합니다."), {});
+      return;
+    }
     setUploading(type);
     try {
       const data = await api.storage.upload(file, type);
@@ -171,7 +181,10 @@ export default function AdminSettings() {
         [`${type}_file_id`]: data.id,
         [`${type}_url`]: data.signed_url,
       }));
-    } catch (e: any) { handleError(e, { fallback: "파일 업로드에 실패했습니다." }); }
+      handleSuccess(`${type === "logo" ? "로고" : "직인"} 이미지가 업로드되었습니다.`);
+    } catch (e: any) {
+      handleError(e, { fallback: `${type === "logo" ? "로고" : "직인"} 업로드에 실패했습니다. 다시 시도해주세요.` });
+    }
     finally { setUploading(null); }
   };
 
