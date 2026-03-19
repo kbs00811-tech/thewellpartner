@@ -2,7 +2,7 @@ import { Link, useLocation, Outlet } from "react-router";
 import { useState, useEffect } from "react";
 import * as api from "../lib/api";
 import { useAuth } from "../hooks/useAuth";
-import { ADMIN_BASE } from "../routes";
+import { ADMIN_BASE } from "../constants";
 import { validatePasswordStrength } from "../lib/security";
 import {
   LayoutDashboard, Globe, Briefcase, Users, MessageSquare, FileText, BarChart3,

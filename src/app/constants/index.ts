@@ -3,6 +3,9 @@
  * 여러 페이지에서 중복 사용되는 라벨, 옵션, 상태값을 중앙 관리
  */
 
+// ──── 관리자 경로 접두사 ────
+export const ADMIN_BASE = "/manage-twp";
+
 // ──── 문의 유형 ────
 export const INQUIRY_TYPES = {
   COMPANY: "COMPANY",

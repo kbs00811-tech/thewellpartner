@@ -7,6 +7,7 @@
 import { useEffect, useCallback, useRef, useState } from "react";
 import * as api from "../lib/api";
 import { isTokenExpired } from "../lib/security";
+import { ADMIN_BASE } from "../constants";
 
 const SESSION_CHECK_INTERVAL = 60_000; // 1분마다 체크 (5분 → 1분으로 단축)
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000; // 24시간
@@ -67,7 +68,7 @@ export function useAuth(options?: { onExpired?: () => void }): UseAuthReturn {
     const currentUser = api.getUser();
     api.auditLogs.log("로그아웃", `${currentUser?.name || "관리자"} 로그아웃`).catch(() => {});
     api.logout();
-    window.location.href = "/manage-twp/login";
+    window.location.href = `${ADMIN_BASE}/login`;
   }, []);
 
   return {

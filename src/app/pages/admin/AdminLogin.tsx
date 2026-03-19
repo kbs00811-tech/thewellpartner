@@ -5,6 +5,7 @@ import * as api from "../../lib/api";
 import { Logo } from "../../components/Logo";
 import { Toaster } from "../../components/ui/sonner";
 import { checkRateLimit, resetRateLimit } from "../../lib/security";
+import { ADMIN_BASE } from "../../constants";
 import { handleSuccess } from "../../lib/error-handler";
 
 const RATE_LIMIT_KEY = "admin_login";
@@ -51,7 +52,7 @@ export default function AdminLogin() {
     try {
       await api.login(username.trim(), password);
       resetRateLimit(RATE_LIMIT_KEY);
-      navigate("/manage-twp");
+      navigate(ADMIN_BASE);
     } catch (err: any) {
       if (err.message?.includes("아이디") || err.message?.includes("비밀번호")) {
         try {
@@ -60,7 +61,7 @@ export default function AdminLogin() {
           setSeedStatus("시드 완료. 로그인 재시도...");
           await api.login(username.trim(), password);
           resetRateLimit(RATE_LIMIT_KEY);
-          navigate("/manage-twp");
+          navigate(ADMIN_BASE);
           return;
         } catch {
           setSeedStatus("");
