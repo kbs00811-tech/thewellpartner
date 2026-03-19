@@ -30,22 +30,27 @@ export function PageHero({ label, title, subtitle }: PageHeroProps) {
   return (
     <section
       className="relative pt-36 pb-20 overflow-hidden"
-      style={{ background: "linear-gradient(165deg, var(--brand-hero-from), var(--brand-hero-to))" }}
+      style={{ background: "linear-gradient(160deg, #0F172A 0%, #1E293B 100%)" }}
     >
-      <GrainOverlay />
+      {/* Dot grid pattern */}
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none"
+        style={{ backgroundImage: "radial-gradient(circle, #3B82F6 1px, transparent 1px)", backgroundSize: "32px 32px" }}
+      />
+      {/* Blue glow */}
+      <div className="absolute top-[-30%] right-[-10%] w-[500px] h-[500px] rounded-full opacity-15 blur-[100px] pointer-events-none" style={{ background: "radial-gradient(circle, #3B82F6, transparent 70%)" }} />
       <div className="relative max-w-7xl mx-auto px-5 sm:px-8">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <p className="text-sm font-semibold tracking-wider uppercase text-[var(--brand-cta)] mb-4">
+          <p className="text-sm font-semibold tracking-[0.15em] uppercase text-[#3B82F6] mb-4">
             {label}
           </p>
           <h1 className="text-4xl md:text-5xl font-bold text-white tracking-[-0.02em] mb-4">
             {title}
           </h1>
-          <p className="text-lg text-white/50 max-w-xl">{subtitle}</p>
+          <p className="text-lg text-[#94A3B8] max-w-xl">{subtitle}</p>
         </motion.div>
       </div>
     </section>
@@ -69,17 +74,18 @@ export function CtaSection({
   return (
     <section
       className="py-24 md:py-28 relative overflow-hidden"
-      style={{ background: "linear-gradient(165deg, var(--brand-hero-from), var(--brand-hero-to))" }}
+      style={{ background: "linear-gradient(160deg, #0F172A 0%, #1E293B 100%)" }}
     >
-      <GrainOverlay opacity={0.04} />
+      {/* Glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] rounded-full opacity-20 blur-[120px] pointer-events-none" style={{ background: "#3B82F6" }} />
       <div className="relative max-w-3xl mx-auto px-5 sm:px-8 text-center">
         <h2 className="text-3xl md:text-[2.25rem] font-bold text-white leading-tight tracking-[-0.02em] mb-5">
           {title}
         </h2>
-        <p className="text-lg text-white/50 mb-10">{subtitle}</p>
+        <p className="text-lg text-[#94A3B8] mb-10">{subtitle}</p>
         <Link
           to={buttonTo}
-          className="group inline-flex items-center gap-2 px-8 py-4 bg-white text-[var(--brand-heading)] font-semibold rounded-full transition-all hover:bg-white/90"
+          className="group inline-flex items-center gap-2 px-8 py-4 bg-white text-[#0F172A] font-semibold rounded-full transition-all hover:shadow-lg hover:shadow-white/10"
         >
           {buttonText}
           <ArrowRight

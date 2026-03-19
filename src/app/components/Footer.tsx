@@ -102,7 +102,7 @@ export function Footer() {
   ].filter((s) => s.url && s.url.trim());
 
   return (
-    <footer className="bg-[var(--brand-navy)] text-gray-400">
+    <footer className="bg-[#0F172A] text-[#94A3B8] border-t border-white/[0.04]">
       <div className="max-w-7xl mx-auto px-5 sm:px-8">
         {/* Top */}
         <div className="py-14 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-10">

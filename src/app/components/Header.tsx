@@ -93,7 +93,7 @@ export function Header() {
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
         isTransparent
           ? "bg-transparent"
-          : "bg-white/95 backdrop-blur-xl border-b border-gray-100/80"
+          : "bg-[#0F172A]/95 backdrop-blur-xl border-b border-white/[0.06]"
       }`}
       role="banner"
     >
@@ -109,7 +109,7 @@ export function Header() {
         <div className="flex items-center justify-between h-[72px]">
           {/* Logo */}
           <Link to="/" className="flex-shrink-0" aria-label="더웰파트너 홈">
-            <Logo variant={isTransparent ? "dark" : "light"} size="md" />
+            <Logo variant="dark" size="md" />
           </Link>
 
           {/* Desktop Nav */}
@@ -127,9 +127,9 @@ export function Header() {
                     to={item.path}
                     className={`flex items-center gap-0.5 px-3.5 py-2 rounded-lg text-[0.9rem] font-medium transition-colors duration-200 ${
                       isTransparent
-                        ? "text-white/80 hover:text-white hover:bg-white/[0.06]"
-                        : "text-slate-600 hover:text-[var(--brand-heading)] hover:bg-gray-50"
-                    } ${isActive ? (isTransparent ? "!text-white" : "!text-[var(--brand-blue)]") : ""}`}
+                        ? "text-[#94A3B8] hover:text-white hover:bg-white/[0.06]"
+                        : "text-[#94A3B8] hover:text-white hover:bg-white/[0.06]"
+                    } ${isActive ? "!text-white" : ""}`}
                     aria-current={isActive ? "page" : undefined}
                     aria-haspopup={item.children ? "true" : undefined}
                     aria-expanded={item.children ? activeDropdown === item.name : undefined}
@@ -155,12 +155,12 @@ export function Header() {
                         role="menu"
                         aria-label={`${item.name} 하위 메뉴`}
                       >
-                        <div className="bg-white rounded-xl shadow-lg shadow-black/[0.06] border border-gray-100 py-1.5 overflow-hidden">
+                        <div className="bg-[#1E293B] rounded-xl shadow-lg shadow-black/20 border border-white/[0.08] py-1.5 overflow-hidden">
                           {item.children.map((child) => (
                             <Link
                               key={child.name}
                               to={child.path}
-                              className="block px-4 py-2.5 text-sm text-slate-500 hover:text-[var(--brand-blue)] hover:bg-[var(--brand-section-alt)] transition-colors"
+                              className="block px-4 py-2.5 text-sm text-[#94A3B8] hover:text-white hover:bg-white/[0.06] transition-colors"
                               role="menuitem"
                             >
                               {child.name}
@@ -179,11 +179,7 @@ export function Header() {
           <div className="hidden lg:block">
             <Link
               to="/contact"
-              className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 ${
-                isTransparent
-                  ? "bg-white text-[var(--brand-heading)] hover:bg-white/90"
-                  : "bg-[var(--brand-heading)] text-white hover:bg-[var(--brand-navy-light)]"
-              }`}
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 bg-white text-[#0F172A] hover:bg-white/90 hover:shadow-lg hover:shadow-white/10"
             >
               상담 신청
               <ArrowRight size={14} aria-hidden="true" />
@@ -195,7 +191,7 @@ export function Header() {
             ref={menuButtonRef}
             className="lg:hidden p-2 rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-blue)]"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            style={{ color: isTransparent ? "#ffffff" : "var(--brand-heading)" }}
+            style={{ color: "#ffffff" }}
             aria-label={isMobileMenuOpen ? "메뉴 닫기" : "메뉴 열기"}
             aria-expanded={isMobileMenuOpen}
             aria-controls="mobile-menu"
@@ -227,7 +223,7 @@ export function Header() {
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.2 }}
-              className="lg:hidden bg-white border-t border-gray-100 overflow-hidden relative z-50 max-h-[calc(100vh-72px)] overflow-y-auto"
+              className="lg:hidden bg-[#0F172A] border-t border-white/[0.06] overflow-hidden relative z-50 max-h-[calc(100vh-72px)] overflow-y-auto"
               role="dialog"
               aria-label="모바일 메뉴"
             >
@@ -245,8 +241,8 @@ export function Header() {
                               to={item.path}
                               className={`flex-1 py-3 px-4 rounded-lg text-[0.95rem] font-medium transition-colors ${
                                 isActive
-                                  ? "text-[var(--brand-blue)] bg-[var(--brand-sky)]"
-                                  : "text-[var(--brand-heading)] hover:bg-gray-50"
+                                  ? "text-white bg-white/[0.08]"
+                                  : "text-[#94A3B8] hover:bg-white/[0.04]"
                               }`}
                               onClick={closeMobileMenu}
                               aria-current={isActive ? "page" : undefined}
@@ -255,7 +251,7 @@ export function Header() {
                             </Link>
                             <button
                               onClick={() => setMobileExpandedItem(isExpanded ? null : item.name)}
-                              className="p-3 rounded-lg hover:bg-gray-50 transition-colors focus-visible:outline-2 focus-visible:outline-[var(--brand-blue)]"
+                              className="p-3 rounded-lg hover:bg-white/[0.04] transition-colors focus-visible:outline-2 focus-visible:outline-[var(--brand-blue)]"
                               aria-label={`${item.name} 하위 메뉴 ${isExpanded ? "접기" : "펼치기"}`}
                               aria-expanded={isExpanded}
                             >
@@ -280,7 +276,7 @@ export function Header() {
                                     <Link
                                       key={child.name}
                                       to={child.path}
-                                      className="block py-2.5 px-4 rounded-lg text-sm text-gray-500 hover:text-[var(--brand-blue)] hover:bg-gray-50 transition-colors"
+                                      className="block py-2.5 px-4 rounded-lg text-sm text-[#64748B] hover:text-white hover:bg-white/[0.04] transition-colors"
                                       onClick={closeMobileMenu}
                                     >
                                       {child.name}
@@ -296,8 +292,8 @@ export function Header() {
                           to={item.path}
                           className={`block py-3 px-4 rounded-lg text-[0.95rem] font-medium transition-colors ${
                             isActive
-                              ? "text-[var(--brand-blue)] bg-[var(--brand-sky)]"
-                              : "text-[var(--brand-heading)] hover:bg-gray-50"
+                              ? "text-white bg-white/[0.08]"
+                              : "text-[#94A3B8] hover:bg-white/[0.04]"
                           }`}
                           onClick={closeMobileMenu}
                           aria-current={isActive ? "page" : undefined}
@@ -308,14 +304,14 @@ export function Header() {
                     </div>
                   );
                 })}
-                <div className="pt-3 mt-3 border-t border-gray-100 space-y-2">
+                <div className="pt-3 mt-3 border-t border-white/[0.06] space-y-2">
                   <Link to="/contact" onClick={closeMobileMenu}>
-                    <button className="w-full py-3 rounded-full text-white font-semibold bg-[var(--brand-heading)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-blue)]">
+                    <button className="w-full py-3 rounded-full text-[#0F172A] font-semibold bg-white hover:bg-white/90 transition-colors">
                       기업 상담 신청
                     </button>
                   </Link>
                   <Link to="/recruit" onClick={closeMobileMenu}>
-                    <button className="w-full py-3 rounded-full font-semibold border border-gray-200 text-[var(--brand-heading)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-blue)]">
+                    <button className="w-full py-3 rounded-full font-semibold border border-white/15 text-white/90 hover:bg-white/[0.04] transition-colors">
                       채용공고 보기
                     </button>
                   </Link>
