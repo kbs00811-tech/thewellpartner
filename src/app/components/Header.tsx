@@ -109,7 +109,7 @@ export function Header() {
         <div className="flex items-center justify-between h-[72px]">
           {/* Logo */}
           <Link to="/" className="flex-shrink-0" aria-label="더웰파트너 홈">
-            <Logo variant="dark" size="md" />
+            <Logo variant={isTransparent ? "light" : "dark"} size="md" />
           </Link>
 
           {/* Desktop Nav */}
@@ -127,9 +127,9 @@ export function Header() {
                     to={item.path}
                     className={`flex items-center gap-0.5 px-3.5 py-2 rounded-lg text-[0.9rem] font-medium transition-colors duration-200 ${
                       isTransparent
-                        ? "text-[#94A3B8] hover:text-white hover:bg-white/[0.06]"
+                        ? "text-[#475569] hover:text-[#0F172A] hover:bg-[#0F172A]/[0.04]"
                         : "text-[#94A3B8] hover:text-white hover:bg-white/[0.06]"
-                    } ${isActive ? "!text-white" : ""}`}
+                    } ${isActive ? (isTransparent ? "!text-[#0284C7]" : "!text-white") : ""}`}
                     aria-current={isActive ? "page" : undefined}
                     aria-haspopup={item.children ? "true" : undefined}
                     aria-expanded={item.children ? activeDropdown === item.name : undefined}
@@ -155,12 +155,20 @@ export function Header() {
                         role="menu"
                         aria-label={`${item.name} 하위 메뉴`}
                       >
-                        <div className="bg-[#1E293B] rounded-xl shadow-lg shadow-black/20 border border-white/[0.08] py-1.5 overflow-hidden">
+                        <div className={`rounded-xl shadow-lg py-1.5 overflow-hidden ${
+                          isTransparent
+                            ? "bg-white border border-gray-100 shadow-black/[0.06]"
+                            : "bg-[#1E293B] border border-white/[0.08] shadow-black/20"
+                        }`}>
                           {item.children.map((child) => (
                             <Link
                               key={child.name}
                               to={child.path}
-                              className="block px-4 py-2.5 text-sm text-[#94A3B8] hover:text-white hover:bg-white/[0.06] transition-colors"
+                              className={`block px-4 py-2.5 text-sm transition-colors ${
+                                isTransparent
+                                  ? "text-[#475569] hover:text-[#0284C7] hover:bg-[#F0F9FF]"
+                                  : "text-[#94A3B8] hover:text-white hover:bg-white/[0.06]"
+                              }`}
                               role="menuitem"
                             >
                               {child.name}
@@ -179,7 +187,11 @@ export function Header() {
           <div className="hidden lg:block">
             <Link
               to="/contact"
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 bg-white text-[#0F172A] hover:bg-white/90 hover:shadow-lg hover:shadow-white/10"
+              className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-200 ${
+                isTransparent
+                  ? "bg-[#0284C7] text-white hover:bg-[#0369A1] hover:shadow-lg hover:shadow-[#0284C7]/20"
+                  : "bg-white text-[#0F172A] hover:bg-white/90 hover:shadow-lg hover:shadow-white/10"
+              }`}
             >
               상담 신청
               <ArrowRight size={14} aria-hidden="true" />
@@ -191,7 +203,7 @@ export function Header() {
             ref={menuButtonRef}
             className="lg:hidden p-2 rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-blue)]"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            style={{ color: "#ffffff" }}
+            style={{ color: isTransparent ? "#0F172A" : "#ffffff" }}
             aria-label={isMobileMenuOpen ? "메뉴 닫기" : "메뉴 열기"}
             aria-expanded={isMobileMenuOpen}
             aria-controls="mobile-menu"

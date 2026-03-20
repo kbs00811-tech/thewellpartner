@@ -75,19 +75,19 @@ export default function Home() {
   return (
     <div className="w-full">
 
-      {/* ━━━ HERO — Deep Navy Tech ━━━ */}
-      <section className="relative min-h-screen flex items-center overflow-hidden" style={{ background: "linear-gradient(160deg, #0F172A 0%, #1E293B 100%)" }}>
-        {/* Grid pattern background */}
-        <div className="absolute inset-0 opacity-[0.04] pointer-events-none"
+      {/* ━━━ HERO — Bright Sky Blue ━━━ */}
+      <section className="relative min-h-screen flex items-center overflow-hidden bg-gradient-to-br from-[#F0F9FF] via-white to-[#E0F2FE]">
+        {/* Soft grid pattern */}
+        <div className="absolute inset-0 opacity-[0.4] pointer-events-none"
           style={{
-            backgroundImage: `radial-gradient(circle, #38BDF8 1px, transparent 1px)`,
-            backgroundSize: "40px 40px",
+            backgroundImage: `radial-gradient(circle, #BAE6FD 1px, transparent 1px)`,
+            backgroundSize: "48px 48px",
           }}
         />
 
-        {/* Gradient glow - top right */}
-        <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full opacity-20 blur-[120px] pointer-events-none" style={{ background: "radial-gradient(circle, #38BDF8, transparent 70%)" }} />
-        <div className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] rounded-full opacity-10 blur-[100px] pointer-events-none" style={{ background: "radial-gradient(circle, #60A5FA, transparent 70%)" }} />
+        {/* Soft glow accents */}
+        <div className="absolute top-[-15%] right-[-5%] w-[700px] h-[700px] rounded-full opacity-30 blur-[150px] pointer-events-none" style={{ background: "radial-gradient(circle, #7DD3FC, transparent 70%)" }} />
+        <div className="absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] rounded-full opacity-20 blur-[120px] pointer-events-none" style={{ background: "radial-gradient(circle, #BAE6FD, transparent 70%)" }} />
 
         <div className="relative w-full max-w-7xl mx-auto px-5 sm:px-8 py-32 md:py-0">
           <div className="grid lg:grid-cols-2 gap-16 items-center min-h-screen lg:min-h-0 lg:py-32">
@@ -98,7 +98,7 @@ export default function Home() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.8 }}
-                className="text-sm tracking-[0.2em] uppercase text-[#38BDF8] mb-6 font-semibold"
+                className="text-sm tracking-[0.2em] uppercase text-[#0284C7] mb-6 font-semibold"
               >
                 Production Outsourcing & Staffing
               </motion.p>
@@ -107,18 +107,18 @@ export default function Home() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.7, delay: 0.1 }}
-                className="text-[2.5rem] sm:text-[3.5rem] md:text-[4rem] font-bold text-white leading-[1.1] tracking-[-0.03em] mb-7"
+                className="text-[2.5rem] sm:text-[3.5rem] md:text-[4rem] font-bold text-[#0F172A] leading-[1.1] tracking-[-0.03em] mb-7"
               >
                 산업 현장의 성장을
                 <br />
-                함께 만들어 갑니다
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0284C7] to-[#38BDF8]">함께 만들어 갑니다</span>
               </motion.h1>
 
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.7, delay: 0.2 }}
-                className="text-lg md:text-xl text-[#94A3B8] leading-relaxed mb-10 max-w-lg"
+                className="text-lg md:text-xl text-[#64748B] leading-relaxed mb-10 max-w-lg"
               >
                 제조·생산·물류·반도체 현장에
                 <br className="sm:hidden" /> 최적화된 인력 운영 파트너
@@ -132,14 +132,14 @@ export default function Home() {
               >
                 <Link
                   to="/contact"
-                  className="group inline-flex items-center gap-2.5 px-8 py-4 bg-white text-[#0F172A] font-semibold rounded-full transition-all hover:shadow-lg hover:shadow-white/10"
+                  className="group inline-flex items-center gap-2.5 px-8 py-4 bg-[#0284C7] text-white font-semibold rounded-full transition-all hover:bg-[#0369A1] hover:shadow-xl hover:shadow-[#0284C7]/20"
                 >
                   기업 상담 신청
                   <ArrowRight size={17} className="transition-transform group-hover:translate-x-0.5" />
                 </Link>
                 <Link
                   to="/recruit"
-                  className="inline-flex items-center gap-2.5 px-8 py-4 border border-white/15 text-white/90 font-medium rounded-full transition-all hover:bg-white/5 hover:border-white/25"
+                  className="inline-flex items-center gap-2.5 px-8 py-4 border border-[#CBD5E1] text-[#334155] font-medium rounded-full transition-all hover:bg-[#F0F9FF] hover:border-[#7DD3FC]"
                 >
                   채용공고 보기
                 </Link>
@@ -149,19 +149,19 @@ export default function Home() {
             {/* Right — Floating Glass Cards */}
             <div className="hidden lg:block relative h-[500px]">
               {/* Network lines (SVG) */}
-              <svg className="absolute inset-0 w-full h-full opacity-20" viewBox="0 0 400 400">
-                <line x1="80" y1="100" x2="250" y2="160" stroke="#38BDF8" strokeWidth="0.5" />
-                <line x1="250" y1="160" x2="320" y2="280" stroke="#38BDF8" strokeWidth="0.5" />
-                <line x1="120" y1="300" x2="250" y2="160" stroke="#38BDF8" strokeWidth="0.5" />
-                <line x1="80" y1="100" x2="320" y2="280" stroke="#38BDF8" strokeWidth="0.3" />
-                <line x1="200" y1="60" x2="320" y2="280" stroke="#38BDF8" strokeWidth="0.3" />
-                <line x1="120" y1="300" x2="350" y2="120" stroke="#38BDF8" strokeWidth="0.3" />
-                <circle cx="80" cy="100" r="3" fill="#38BDF8" opacity="0.6" />
-                <circle cx="250" cy="160" r="3" fill="#38BDF8" opacity="0.6" />
-                <circle cx="320" cy="280" r="3" fill="#38BDF8" opacity="0.6" />
-                <circle cx="120" cy="300" r="3" fill="#38BDF8" opacity="0.6" />
-                <circle cx="200" cy="60" r="2" fill="#38BDF8" opacity="0.4" />
-                <circle cx="350" cy="120" r="2" fill="#38BDF8" opacity="0.4" />
+              <svg className="absolute inset-0 w-full h-full opacity-30" viewBox="0 0 400 400">
+                <line x1="80" y1="100" x2="250" y2="160" stroke="#38BDF8" strokeWidth="0.8" />
+                <line x1="250" y1="160" x2="320" y2="280" stroke="#38BDF8" strokeWidth="0.8" />
+                <line x1="120" y1="300" x2="250" y2="160" stroke="#38BDF8" strokeWidth="0.8" />
+                <line x1="80" y1="100" x2="320" y2="280" stroke="#7DD3FC" strokeWidth="0.4" />
+                <line x1="200" y1="60" x2="320" y2="280" stroke="#7DD3FC" strokeWidth="0.4" />
+                <line x1="120" y1="300" x2="350" y2="120" stroke="#7DD3FC" strokeWidth="0.4" />
+                <circle cx="80" cy="100" r="4" fill="#0284C7" opacity="0.5" />
+                <circle cx="250" cy="160" r="4" fill="#0284C7" opacity="0.5" />
+                <circle cx="320" cy="280" r="4" fill="#0284C7" opacity="0.5" />
+                <circle cx="120" cy="300" r="4" fill="#0284C7" opacity="0.5" />
+                <circle cx="200" cy="60" r="3" fill="#38BDF8" opacity="0.4" />
+                <circle cx="350" cy="120" r="3" fill="#38BDF8" opacity="0.4" />
               </svg>
 
               {/* Glass Card 1 — Factory */}
@@ -169,12 +169,12 @@ export default function Home() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, delay: 0.3 }}
-                className="absolute top-12 left-8 px-5 py-4 rounded-2xl border border-white/10 backdrop-blur-xl"
-                style={{ background: "rgba(255,255,255,0.05)" }}
+                className="absolute top-12 left-8 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-lg shadow-[#0284C7]/5"
+                style={{ background: "rgba(255,255,255,0.7)" }}
               >
-                <Factory size={22} className="text-[#38BDF8] mb-2" />
-                <div className="text-sm font-semibold text-white">생산도급</div>
-                <div className="text-xs text-[#94A3B8]">Manufacturing</div>
+                <Factory size={22} className="text-[#0284C7] mb-2" />
+                <div className="text-sm font-semibold text-[#0F172A]">생산도급</div>
+                <div className="text-xs text-[#64748B]">Manufacturing</div>
               </motion.div>
 
               {/* Glass Card 2 — Users */}
@@ -182,12 +182,12 @@ export default function Home() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, delay: 0.5 }}
-                className="absolute top-32 right-4 px-5 py-4 rounded-2xl border border-white/10 backdrop-blur-xl"
-                style={{ background: "rgba(255,255,255,0.05)" }}
+                className="absolute top-32 right-4 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-lg shadow-[#0284C7]/5"
+                style={{ background: "rgba(255,255,255,0.7)" }}
               >
-                <Users size={22} className="text-[#60A5FA] mb-2" />
-                <div className="text-sm font-semibold text-white">인력파견</div>
-                <div className="text-xs text-[#94A3B8]">Staffing</div>
+                <Users size={22} className="text-[#0EA5E9] mb-2" />
+                <div className="text-sm font-semibold text-[#0F172A]">인력파견</div>
+                <div className="text-xs text-[#64748B]">Staffing</div>
               </motion.div>
 
               {/* Glass Card 3 — GraduationCap */}
@@ -195,12 +195,12 @@ export default function Home() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, delay: 0.7 }}
-                className="absolute bottom-32 left-16 px-5 py-4 rounded-2xl border border-white/10 backdrop-blur-xl"
-                style={{ background: "rgba(255,255,255,0.05)" }}
+                className="absolute bottom-32 left-16 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-lg shadow-[#0284C7]/5"
+                style={{ background: "rgba(255,255,255,0.7)" }}
               >
-                <GraduationCap size={22} className="text-[#38BDF8] mb-2" />
-                <div className="text-sm font-semibold text-white">교육훈련</div>
-                <div className="text-xs text-[#94A3B8]">Training</div>
+                <GraduationCap size={22} className="text-[#0284C7] mb-2" />
+                <div className="text-sm font-semibold text-[#0F172A]">교육훈련</div>
+                <div className="text-xs text-[#64748B]">Training</div>
               </motion.div>
 
               {/* Glass Card 4 — Building */}
@@ -208,16 +208,16 @@ export default function Home() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, delay: 0.9 }}
-                className="absolute bottom-12 right-16 px-5 py-4 rounded-2xl border border-white/10 backdrop-blur-xl"
-                style={{ background: "rgba(255,255,255,0.05)" }}
+                className="absolute bottom-12 right-16 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-lg shadow-[#0284C7]/5"
+                style={{ background: "rgba(255,255,255,0.7)" }}
               >
-                <Building2 size={22} className="text-[#60A5FA] mb-2" />
-                <div className="text-sm font-semibold text-white">시설관리</div>
-                <div className="text-xs text-[#94A3B8]">Facility</div>
+                <Building2 size={22} className="text-[#0EA5E9] mb-2" />
+                <div className="text-sm font-semibold text-[#0F172A]">시설관리</div>
+                <div className="text-xs text-[#64748B]">Facility</div>
               </motion.div>
 
               {/* Center glow orb */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full opacity-30 blur-[80px]" style={{ background: "#38BDF8" }} />
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full opacity-20 blur-[80px]" style={{ background: "#38BDF8" }} />
             </div>
 
           </div>
@@ -227,7 +227,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.5 }}
-            className="border-t border-white/10 pt-8 pb-4 grid grid-cols-2 md:grid-cols-4 gap-8"
+            className="border-t border-[#E2E8F0] pt-8 pb-4 grid grid-cols-2 md:grid-cols-4 gap-8"
           >
             {[
               { label: "설립", val: display(info.founded_year, "2019") + "년" },
@@ -236,10 +236,10 @@ export default function Home() {
               { label: "현장 만족도", val: "98%", num: 98, suffix: "%" },
             ].map((s, i) => (
               <div key={i}>
-                <div className="text-2xl md:text-3xl font-bold text-white tracking-tight mb-1">
+                <div className="text-2xl md:text-3xl font-bold text-[#0F172A] tracking-tight mb-1">
                   {s.num ? <Counter target={s.num} suffix={s.suffix} /> : s.val}
                 </div>
-                <div className="text-sm text-[#94A3B8]">{s.label}</div>
+                <div className="text-sm text-[#64748B]">{s.label}</div>
               </div>
             ))}
           </motion.div>
