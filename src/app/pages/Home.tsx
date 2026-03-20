@@ -80,13 +80,13 @@ export default function Home() {
         {/* Grid pattern background */}
         <div className="absolute inset-0 opacity-[0.04] pointer-events-none"
           style={{
-            backgroundImage: `radial-gradient(circle, #3B82F6 1px, transparent 1px)`,
+            backgroundImage: `radial-gradient(circle, #38BDF8 1px, transparent 1px)`,
             backgroundSize: "40px 40px",
           }}
         />
 
         {/* Gradient glow - top right */}
-        <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full opacity-20 blur-[120px] pointer-events-none" style={{ background: "radial-gradient(circle, #3B82F6, transparent 70%)" }} />
+        <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full opacity-20 blur-[120px] pointer-events-none" style={{ background: "radial-gradient(circle, #38BDF8, transparent 70%)" }} />
         <div className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] rounded-full opacity-10 blur-[100px] pointer-events-none" style={{ background: "radial-gradient(circle, #60A5FA, transparent 70%)" }} />
 
         <div className="relative w-full max-w-7xl mx-auto px-5 sm:px-8 py-32 md:py-0">
@@ -98,7 +98,7 @@ export default function Home() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.8 }}
-                className="text-sm tracking-[0.2em] uppercase text-[#3B82F6] mb-6 font-semibold"
+                className="text-sm tracking-[0.2em] uppercase text-[#38BDF8] mb-6 font-semibold"
               >
                 Production Outsourcing & Staffing
               </motion.p>
@@ -150,18 +150,18 @@ export default function Home() {
             <div className="hidden lg:block relative h-[500px]">
               {/* Network lines (SVG) */}
               <svg className="absolute inset-0 w-full h-full opacity-20" viewBox="0 0 400 400">
-                <line x1="80" y1="100" x2="250" y2="160" stroke="#3B82F6" strokeWidth="0.5" />
-                <line x1="250" y1="160" x2="320" y2="280" stroke="#3B82F6" strokeWidth="0.5" />
-                <line x1="120" y1="300" x2="250" y2="160" stroke="#3B82F6" strokeWidth="0.5" />
-                <line x1="80" y1="100" x2="320" y2="280" stroke="#3B82F6" strokeWidth="0.3" />
-                <line x1="200" y1="60" x2="320" y2="280" stroke="#3B82F6" strokeWidth="0.3" />
-                <line x1="120" y1="300" x2="350" y2="120" stroke="#3B82F6" strokeWidth="0.3" />
-                <circle cx="80" cy="100" r="3" fill="#3B82F6" opacity="0.6" />
-                <circle cx="250" cy="160" r="3" fill="#3B82F6" opacity="0.6" />
-                <circle cx="320" cy="280" r="3" fill="#3B82F6" opacity="0.6" />
-                <circle cx="120" cy="300" r="3" fill="#3B82F6" opacity="0.6" />
-                <circle cx="200" cy="60" r="2" fill="#3B82F6" opacity="0.4" />
-                <circle cx="350" cy="120" r="2" fill="#3B82F6" opacity="0.4" />
+                <line x1="80" y1="100" x2="250" y2="160" stroke="#38BDF8" strokeWidth="0.5" />
+                <line x1="250" y1="160" x2="320" y2="280" stroke="#38BDF8" strokeWidth="0.5" />
+                <line x1="120" y1="300" x2="250" y2="160" stroke="#38BDF8" strokeWidth="0.5" />
+                <line x1="80" y1="100" x2="320" y2="280" stroke="#38BDF8" strokeWidth="0.3" />
+                <line x1="200" y1="60" x2="320" y2="280" stroke="#38BDF8" strokeWidth="0.3" />
+                <line x1="120" y1="300" x2="350" y2="120" stroke="#38BDF8" strokeWidth="0.3" />
+                <circle cx="80" cy="100" r="3" fill="#38BDF8" opacity="0.6" />
+                <circle cx="250" cy="160" r="3" fill="#38BDF8" opacity="0.6" />
+                <circle cx="320" cy="280" r="3" fill="#38BDF8" opacity="0.6" />
+                <circle cx="120" cy="300" r="3" fill="#38BDF8" opacity="0.6" />
+                <circle cx="200" cy="60" r="2" fill="#38BDF8" opacity="0.4" />
+                <circle cx="350" cy="120" r="2" fill="#38BDF8" opacity="0.4" />
               </svg>
 
               {/* Glass Card 1 — Factory */}
@@ -172,7 +172,7 @@ export default function Home() {
                 className="absolute top-12 left-8 px-5 py-4 rounded-2xl border border-white/10 backdrop-blur-xl"
                 style={{ background: "rgba(255,255,255,0.05)" }}
               >
-                <Factory size={22} className="text-[#3B82F6] mb-2" />
+                <Factory size={22} className="text-[#38BDF8] mb-2" />
                 <div className="text-sm font-semibold text-white">생산도급</div>
                 <div className="text-xs text-[#94A3B8]">Manufacturing</div>
               </motion.div>
@@ -198,7 +198,7 @@ export default function Home() {
                 className="absolute bottom-32 left-16 px-5 py-4 rounded-2xl border border-white/10 backdrop-blur-xl"
                 style={{ background: "rgba(255,255,255,0.05)" }}
               >
-                <GraduationCap size={22} className="text-[#3B82F6] mb-2" />
+                <GraduationCap size={22} className="text-[#38BDF8] mb-2" />
                 <div className="text-sm font-semibold text-white">교육훈련</div>
                 <div className="text-xs text-[#94A3B8]">Training</div>
               </motion.div>
@@ -217,7 +217,7 @@ export default function Home() {
               </motion.div>
 
               {/* Center glow orb */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full opacity-30 blur-[80px]" style={{ background: "#3B82F6" }} />
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full opacity-30 blur-[80px]" style={{ background: "#38BDF8" }} />
             </div>
 
           </div>

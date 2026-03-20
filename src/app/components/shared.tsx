@@ -34,17 +34,17 @@ export function PageHero({ label, title, subtitle }: PageHeroProps) {
     >
       {/* Dot grid pattern */}
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none"
-        style={{ backgroundImage: "radial-gradient(circle, #3B82F6 1px, transparent 1px)", backgroundSize: "32px 32px" }}
+        style={{ backgroundImage: "radial-gradient(circle, #38BDF8 1px, transparent 1px)", backgroundSize: "32px 32px" }}
       />
       {/* Blue glow */}
-      <div className="absolute top-[-30%] right-[-10%] w-[500px] h-[500px] rounded-full opacity-15 blur-[100px] pointer-events-none" style={{ background: "radial-gradient(circle, #3B82F6, transparent 70%)" }} />
+      <div className="absolute top-[-30%] right-[-10%] w-[500px] h-[500px] rounded-full opacity-15 blur-[100px] pointer-events-none" style={{ background: "radial-gradient(circle, #38BDF8, transparent 70%)" }} />
       <div className="relative max-w-7xl mx-auto px-5 sm:px-8">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <p className="text-sm font-semibold tracking-[0.15em] uppercase text-[#3B82F6] mb-4">
+          <p className="text-sm font-semibold tracking-[0.15em] uppercase text-[#38BDF8] mb-4">
             {label}
           </p>
           <h1 className="text-4xl md:text-5xl font-bold text-white tracking-[-0.02em] mb-4">
@@ -77,7 +77,7 @@ export function CtaSection({
       style={{ background: "linear-gradient(160deg, #0F172A 0%, #1E293B 100%)" }}
     >
       {/* Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] rounded-full opacity-20 blur-[120px] pointer-events-none" style={{ background: "#3B82F6" }} />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] rounded-full opacity-20 blur-[120px] pointer-events-none" style={{ background: "#38BDF8" }} />
       <div className="relative max-w-3xl mx-auto px-5 sm:px-8 text-center">
         <h2 className="text-3xl md:text-[2.25rem] font-bold text-white leading-tight tracking-[-0.02em] mb-5">
           {title}

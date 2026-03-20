@@ -43,12 +43,12 @@
   /* TheWell Partner Brand Colors — Deep Navy Tech */
   --brand-navy: #0F172A;
   --brand-navy-light: #1E293B;
-  --brand-blue: #3B82F6;
-  --brand-light-blue: #60A5FA;
-  --brand-sky: #EFF6FF;
-  --brand-cta: #3B82F6;
-  --brand-cta-light: #60A5FA;
-  --brand-cta-glow: rgba(59, 130, 246, 0.25);
+  --brand-blue: #38BDF8;
+  --brand-light-blue: #7DD3FC;
+  --brand-sky: #F0F9FF;
+  --brand-cta: #38BDF8;
+  --brand-cta-light: #7DD3FC;
+  --brand-cta-glow: rgba(56, 189, 248, 0.25);
   /* Legacy aliases */
   --brand-orange: var(--brand-cta);
   --brand-orange-light: var(--brand-cta-light);
@@ -64,7 +64,7 @@
   --brand-border: #E2E8F0;
   --brand-hero-from: #0F172A;
   --brand-hero-to: #1E293B;
-  --brand-hero-accent: #3B82F6;
+  --brand-hero-accent: #38BDF8;
 }
 
 .dark {
