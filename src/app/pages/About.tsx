@@ -18,8 +18,15 @@ function parseHistory(raw: string, companyName: string): { year: string; event: 
     { year: "2024", event: "급여/근태 통합 관리 시스템 도입" },
   ];
   return raw.split("\n").filter(Boolean).map((line) => {
-    const [year, ...rest] = line.split("|");
-    return { year: year.trim(), event: rest.join("|").trim() || year.trim() };
+    // "2019|이벤트" 또는 "2019.02|이벤트" 또는 "2019.02 이벤트" 형식 지원
+    if (line.includes("|")) {
+      const [year, ...rest] = line.split("|");
+      return { year: year.trim(), event: rest.join("|").trim() || year.trim() };
+    }
+    // "2019.02 이벤트" 또는 "2019 이벤트" 형식
+    const match = line.match(/^(\d{4}(?:\.\d{2})?)\s+(.+)/);
+    if (match) return { year: match[1], event: match[2].trim() };
+    return { year: "", event: line.trim() };
   });
 }
 
@@ -170,7 +177,7 @@ export default function About() {
         <div className="max-w-7xl mx-auto px-5 sm:px-8">
           <p className="text-sm font-semibold tracking-wider uppercase text-[var(--brand-blue)] mb-3">History</p>
           <h2 className="text-3xl md:text-[2.25rem] font-bold text-[var(--brand-heading)] tracking-[-0.02em] mb-14">연혁</h2>
-          <div className="max-w-3xl space-y-5">
+          <div className="max-w-3xl space-y-4">
             {milestones.map((m, i) => (
               <motion.div
                 key={i}
@@ -178,12 +185,12 @@ export default function About() {
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.35, delay: i * 0.06 }}
-                className="flex items-center gap-6 bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-lg hover:shadow-black/[0.03] transition-all"
+                className="flex items-center gap-5 bg-white rounded-2xl px-6 py-5 border border-gray-100 hover:shadow-md transition-all"
               >
-                <div className="w-20 h-20 rounded-2xl bg-[var(--brand-blue)] flex items-center justify-center font-bold text-white text-lg flex-shrink-0">
+                <div className="px-4 py-2.5 rounded-xl bg-[var(--brand-blue)] font-bold text-white text-sm flex-shrink-0 whitespace-nowrap">
                   {m.year}
                 </div>
-                <p className="text-lg font-medium text-[var(--brand-heading)]">{m.event}</p>
+                <p className="text-[15px] font-medium text-[var(--brand-heading)]">{m.event}</p>
               </motion.div>
             ))}
           </div>
