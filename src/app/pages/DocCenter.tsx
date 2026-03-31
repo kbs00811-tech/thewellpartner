@@ -12,90 +12,109 @@ import { handleError } from "../lib/error-handler";
 
 type Step = "verify" | "documents";
 
-function generateCertPDF(docType: string, employee: any): Blob {
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const w = 210;
+// 한국어 증명서 HTML → Canvas → PDF 변환
+async function generateCertPDF(docType: string, employee: any): Promise<Blob> {
+  const html2canvas = (await import("html2canvas")).default;
   const now = new Date();
-  const dateStr = `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일`;
+  const dateStr = `${now.getFullYear()}년 ${String(now.getMonth() + 1).padStart(2, "0")}월 ${String(now.getDate()).padStart(2, "0")}일`;
+  const docNo = `TWP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(Math.floor(Math.random() * 10000)).padStart(4, "0")}`;
 
-  // Header
-  doc.setFillColor(15, 27, 51);
-  doc.rect(0, 0, w, 45, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(12);
-  doc.text("The Well Partner", w / 2, 18, { align: "center" });
-  doc.setFontSize(22);
   const titleMap: Record<string, string> = {
-    EMPLOYMENT_CERT: "CERTIFICATE OF EMPLOYMENT",
-    RESIGNATION_CERT: "CERTIFICATE OF RESIGNATION",
-    CAREER_CERT: "CAREER CERTIFICATE",
+    EMPLOYMENT_CERT: "재 직 증 명 서",
+    RESIGNATION_CERT: "퇴 직 증 명 서",
+    CAREER_CERT: "경 력 증 명 서",
   };
-  doc.text(titleMap[docType] || "CERTIFICATE", w / 2, 33, { align: "center" });
 
-  // Body
-  doc.setTextColor(30, 30, 30);
-  doc.setFontSize(11);
-  let y = 65;
-  const left = 30;
-  const labelW = 45;
-
-  const fields: [string, string][] = [
-    ["Name", employee.name || "-"],
-    ["Employee No.", employee.employeeNo || "-"],
-    ["Department", employee.department || "-"],
-    ["Issue Date", dateStr],
-  ];
-
-  if (docType === "EMPLOYMENT_CERT") {
-    fields.push(["Status", "Currently Employed"]);
-  } else if (docType === "RESIGNATION_CERT") {
-    fields.push(["Status", "Resigned"]);
-  } else if (docType === "CAREER_CERT") {
-    fields.push(["Status", "Career Verified"]);
-  }
-
-  for (const [label, value] of fields) {
-    doc.setFont("helvetica", "bold");
-    doc.text(label, left, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(value, left + labelW, y);
-    y += 12;
-  }
-
-  // Certification text
-  y += 15;
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  const descMap: Record<string, string> = {
-    EMPLOYMENT_CERT: "This is to certify that the above person is currently employed at The Well Partner Co., Ltd.",
-    RESIGNATION_CERT: "This is to certify that the above person was previously employed at The Well Partner Co., Ltd. and has resigned.",
-    CAREER_CERT: "This is to certify the career history of the above person at The Well Partner Co., Ltd.",
+  const purposeMap: Record<string, string> = {
+    EMPLOYMENT_CERT: "위 사람은 현재 당사에 재직하고 있음을 증명합니다.",
+    RESIGNATION_CERT: "위 사람은 당사에 근무하다가 퇴직하였음을 증명합니다.",
+    CAREER_CERT: "위 사람의 경력 사항이 위와 같음을 증명합니다.",
   };
-  const lines = doc.splitTextToSize(descMap[docType] || "Certificate issued by The Well Partner.", w - 60);
-  doc.text(lines, left, y);
 
-  // Footer
-  y += 30;
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  doc.text(dateStr, w / 2, y, { align: "center" });
-  y += 10;
-  doc.text("The Well Partner Co., Ltd.", w / 2, y, { align: "center" });
-  y += 7;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.text("CEO", w / 2, y, { align: "center" });
+  // 증명서 HTML 템플릿
+  const container = document.createElement("div");
+  container.style.cssText = "position:fixed;left:-9999px;top:0;z-index:-1;";
+  container.innerHTML = `
+    <div id="cert-render" style="width:794px;min-height:1123px;background:#fff;font-family:'Pretendard','Noto Sans KR',sans-serif;padding:60px 70px;box-sizing:border-box;color:#1a1a1a;position:relative;">
+      <!-- 상단 테두리 -->
+      <div style="position:absolute;top:20px;left:20px;right:20px;bottom:20px;border:2px solid #1E293B;pointer-events:none;"></div>
+      <div style="position:absolute;top:24px;left:24px;right:24px;bottom:24px;border:1px solid #94A3B8;pointer-events:none;"></div>
 
-  // Seal
-  doc.setDrawColor(37, 99, 235);
-  doc.setLineWidth(0.8);
-  doc.circle(w / 2, y + 16, 12);
-  doc.setFontSize(7);
-  doc.setTextColor(37, 99, 235);
-  doc.text("THE WELL", w / 2, y + 14, { align: "center" });
-  doc.text("PARTNER", w / 2, y + 18, { align: "center" });
+      <!-- 문서번호 -->
+      <div style="text-align:right;font-size:12px;color:#64748B;margin-bottom:30px;">
+        문서번호: ${docNo}
+      </div>
 
-  return doc.output("blob");
+      <!-- 제목 -->
+      <h1 style="text-align:center;font-size:36px;font-weight:800;letter-spacing:12px;margin:30px 0 50px;color:#0F172A;">
+        ${titleMap[docType] || "증 명 서"}
+      </h1>
+
+      <!-- 인적사항 테이블 -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:40px;font-size:15px;">
+        <tr>
+          <td style="width:120px;padding:14px 20px;background:#F8FAFC;border:1px solid #E2E8F0;font-weight:700;color:#334155;">성 명</td>
+          <td style="padding:14px 20px;border:1px solid #E2E8F0;">${employee.name || "-"}</td>
+          <td style="width:120px;padding:14px 20px;background:#F8FAFC;border:1px solid #E2E8F0;font-weight:700;color:#334155;">사 번</td>
+          <td style="padding:14px 20px;border:1px solid #E2E8F0;">${employee.employeeNo || "-"}</td>
+        </tr>
+        <tr>
+          <td style="padding:14px 20px;background:#F8FAFC;border:1px solid #E2E8F0;font-weight:700;color:#334155;">부 서</td>
+          <td style="padding:14px 20px;border:1px solid #E2E8F0;">${employee.department || "-"}</td>
+          <td style="padding:14px 20px;background:#F8FAFC;border:1px solid #E2E8F0;font-weight:700;color:#334155;">직 위</td>
+          <td style="padding:14px 20px;border:1px solid #E2E8F0;">${employee.position || "-"}</td>
+        </tr>
+        <tr>
+          <td style="padding:14px 20px;background:#F8FAFC;border:1px solid #E2E8F0;font-weight:700;color:#334155;">발급일자</td>
+          <td colspan="3" style="padding:14px 20px;border:1px solid #E2E8F0;">${dateStr}</td>
+        </tr>
+      </table>
+
+      <!-- 증명 내용 -->
+      <div style="text-align:center;font-size:18px;line-height:2;margin:60px 0 80px;color:#1E293B;">
+        ${purposeMap[docType] || "위 사항을 증명합니다."}
+      </div>
+
+      <!-- 발급일 -->
+      <div style="text-align:center;font-size:16px;color:#475569;margin-bottom:60px;">
+        ${now.getFullYear()}년 ${String(now.getMonth() + 1).padStart(2, "0")}월 ${String(now.getDate()).padStart(2, "0")}일
+      </div>
+
+      <!-- 회사 정보 + 직인 -->
+      <div style="text-align:center;margin-top:20px;">
+        <div style="font-size:22px;font-weight:800;color:#0F172A;letter-spacing:4px;margin-bottom:8px;">
+          주식회사 더웰파트너
+        </div>
+        <div style="font-size:15px;color:#64748B;margin-bottom:6px;">
+          대표이사 김범석
+        </div>
+        <!-- 직인 (추후 이미지로 교체 가능) -->
+        <div style="display:inline-block;width:90px;height:90px;border:3px solid #DC2626;border-radius:50%;margin-top:10px;position:relative;">
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
+            <div style="font-size:11px;font-weight:800;color:#DC2626;letter-spacing:1px;">주식회사</div>
+            <div style="font-size:14px;font-weight:900;color:#DC2626;letter-spacing:2px;">더웰파트너</div>
+            <div style="font-size:9px;color:#DC2626;">대표이사인</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 하단 회사 정보 -->
+      <div style="position:absolute;bottom:40px;left:70px;right:70px;border-top:1px solid #E2E8F0;padding-top:15px;font-size:11px;color:#94A3B8;text-align:center;">
+        경기도 수원시 권선구 경수대로 371 2층 | TEL: 1666-7663 | FAX: 031-298-7663 | E-mail: 2021thewell@gmail.com
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(container);
+  const el = document.getElementById("cert-render")!;
+
+  const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+  document.body.removeChild(container);
+
+  const imgData = canvas.toDataURL("image/png");
+  const pdf = new jsPDF({ unit: "mm", format: "a4" });
+  pdf.addImage(imgData, "PNG", 0, 0, 210, 297);
+  return pdf.output("blob");
 }
 
 export default function DocCenter() {
@@ -145,7 +164,7 @@ export default function DocCenter() {
     setIssuingDoc(docType);
     try {
       await api.publicDocs.issueDoc(docToken, { docType, docTypeName: docName });
-      const blob = generateCertPDF(docType, employeeInfo);
+      const blob = await generateCertPDF(docType, employeeInfo);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
