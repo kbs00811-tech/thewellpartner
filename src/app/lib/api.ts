@@ -231,6 +231,7 @@ export const publicInquiry = {
 
 // ──── Public Document Issuance API ────
 export const publicDocs = {
+  directVerify: (data: any) => apiFetch("/docs/auth/direct-verify", { method: "POST", body: safeBody(data) }),
   sendCode: (data: any) => apiFetch("/docs/auth/send-code", { method: "POST", body: safeBody(data) }),
   verifyCode: (data: any) => apiFetch("/docs/auth/verify-code", { method: "POST", body: safeBody(data) }),
   getAvailable: (token: string) => docFetch("/docs/available", token),

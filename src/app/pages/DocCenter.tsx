@@ -120,24 +120,17 @@ export default function DocCenter() {
     setError("");
     setLoading(true);
     try {
-      // send-code → verify-code 를 한번에 처리
-      const sendRes = await api.publicDocs.sendCode({
+      const res = await api.publicDocs.directVerify({
         employeeNo: verifyForm.employeeNo,
         name: verifyForm.name,
         birthDate: verifyForm.birthDate,
-        mobile: "000-0000-0000", // 더미값
       });
-      // 데모 모드이므로 demoCode로 바로 인증
-      const code = sendRes.demoCode || "000000";
-      const verifyRes = await api.publicDocs.verifyCode({ requestId: sendRes.requestId, code });
-      setDocToken(verifyRes.accessToken);
-      // Load available documents
-      const docsRes = await api.publicDocs.getAvailable(verifyRes.accessToken);
-      setEmployeeInfo(docsRes.employee);
-      setAvailableDocs(docsRes.documents || []);
+      setDocToken(res.accessToken);
+      setEmployeeInfo(res.employee);
+      setAvailableDocs(res.documents || []);
       // Load payroll
       try {
-        const payRes = await api.publicDocs.getPayroll(verifyRes.accessToken);
+        const payRes = await api.publicDocs.getPayroll(res.accessToken);
         setPayrollDocs(payRes || []);
       } catch { setPayrollDocs([]); }
       setStep("documents");

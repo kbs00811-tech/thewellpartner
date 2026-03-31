@@ -557,6 +557,25 @@ app.post(`${BASE}/public/employee-lookup`, async (c) => {
   } catch (e: any) { return c.json(fail(e.message), 500); }
 });
 
+// 직접 인증 (SMS 없이 사번+이름+생년월일로 바로 인증)
+app.post(`${BASE}/docs/auth/direct-verify`, async (c) => {
+  try {
+    const { employeeNo, name, birthDate } = await c.req.json();
+    const employees = await db.findAll("employees");
+    const emp = employees.find((e: any) => e.employee_no === employeeNo && e.name === name);
+    if (!emp) return c.json(fail("직원 정보를 찾을 수 없습니다.", "EMPLOYEE_NOT_FOUND"), 404);
+    if (emp.birth_date && emp.birth_date !== birthDate) return c.json(fail("생년월일이 일치하지 않습니다.", "BIRTH_DATE_MISMATCH"), 400);
+    const token = `doc-${emp.id}-${Date.now()}`;
+    const employee = { name: emp.name, employeeNo: emp.employee_no, department: emp.department || "", position: emp.position || "" };
+    const documents = [
+      { docType: "EMPLOYMENT_CERT", name: "재직증명서", available: emp.employment_status === "ACTIVE" },
+      { docType: "RESIGNATION_CERT", name: "퇴직증명서", available: emp.employment_status === "RESIGNED" },
+      { docType: "CAREER_CERT", name: "경력증명서", available: true },
+    ];
+    return c.json(ok({ accessToken: token, employee, documents }, "인증되었습니다."));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
+
 app.post(`${BASE}/docs/auth/send-code`, async (c) => {
   try {
     const { employeeNo, name, birthDate, mobile } = await c.req.json();
