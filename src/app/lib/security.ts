@@ -10,11 +10,10 @@ const HTML_ESCAPE_MAP: Record<string, string> = {
   ">": "&gt;",
   '"': "&quot;",
   "'": "&#x27;",
-  "/": "&#x2F;",
 };
 
 export function sanitizeHtml(str: string): string {
-  return str.replace(/[&<>"'/]/g, (ch) => HTML_ESCAPE_MAP[ch] || ch);
+  return str.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch] || ch);
 }
 
 export function sanitizeInput(value: unknown): unknown {

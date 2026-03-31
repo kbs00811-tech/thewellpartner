@@ -170,7 +170,7 @@ export default function About() {
         <div className="max-w-7xl mx-auto px-5 sm:px-8">
           <p className="text-sm font-semibold tracking-wider uppercase text-[var(--brand-blue)] mb-3">History</p>
           <h2 className="text-3xl md:text-[2.25rem] font-bold text-[var(--brand-heading)] tracking-[-0.02em] mb-14">연혁</h2>
-          <div className="max-w-2xl">
+          <div className="max-w-3xl space-y-5">
             {milestones.map((m, i) => (
               <motion.div
                 key={i}
@@ -178,17 +178,12 @@ export default function About() {
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.35, delay: i * 0.06 }}
-                className="flex gap-6 mb-8 last:mb-0"
+                className="flex items-center gap-6 bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-lg hover:shadow-black/[0.03] transition-all"
               >
-                <div className="flex flex-col items-center">
-                  <div className="w-14 h-14 rounded-xl bg-[var(--brand-heading)] flex items-center justify-center font-bold text-white text-sm flex-shrink-0">
-                    {m.year}
-                  </div>
-                  {i < milestones.length - 1 && <div className="w-px flex-1 mt-2 bg-gray-100" />}
+                <div className="w-20 h-20 rounded-2xl bg-[var(--brand-blue)] flex items-center justify-center font-bold text-white text-lg flex-shrink-0">
+                  {m.year}
                 </div>
-                <div className="pt-3.5 pb-6">
-                  <p className="font-medium text-[var(--brand-heading)]">{m.event}</p>
-                </div>
+                <p className="text-lg font-medium text-[var(--brand-heading)]">{m.event}</p>
               </motion.div>
             ))}
           </div>
