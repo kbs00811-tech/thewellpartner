@@ -34,10 +34,31 @@ function parseCoreValues(raw: string): { title: string; description: string }[] 
   if (!raw) return null;
   const lines = raw.split("\n").filter(Boolean);
   if (lines.length === 0) return null;
-  return lines.map((line) => {
-    const [title, ...desc] = line.split("|");
-    return { title: title.trim(), description: desc.join("|").trim() || "" };
-  });
+
+  // "제목|설명" 파이프 구분 형식
+  if (lines.some((l) => l.includes("|"))) {
+    return lines.filter((l) => l.includes("|")).map((line) => {
+      const [title, ...desc] = line.split("|");
+      return { title: title.trim(), description: desc.join("|").trim() || "" };
+    });
+  }
+
+  // "1. 제목" + 다음줄 "설명" 형식 (번호 있는 줄 = 제목, 다음 줄 = 설명)
+  const result: { title: string; description: string }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (/^\d+[\.\)]\s*/.test(line)) {
+      const title = line.replace(/^\d+[\.\)]\s*/, "");
+      const desc = (i + 1 < lines.length && !/^\d+[\.\)]\s*/.test(lines[i + 1])) ? lines[++i].trim() : "";
+      result.push({ title, description: desc });
+    } else if (result.length > 0) {
+      // 이전 카드의 설명에 이어붙임
+      result[result.length - 1].description += (result[result.length - 1].description ? " " : "") + line;
+    } else {
+      result.push({ title: line, description: "" });
+    }
+  }
+  return result.length > 0 ? result : null;
 }
 
 function parseCeoGreeting(raw: string, companyName: string): string[] {
