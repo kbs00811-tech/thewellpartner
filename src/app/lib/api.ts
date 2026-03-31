@@ -54,7 +54,8 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${token || SUPABASE_ANON_KEY}`,
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    ...(token ? { "X-Admin-Token": token } : {}),
     ...(options.headers as Record<string, string> || {}),
   };
 
@@ -279,7 +280,10 @@ export const storage = {
     try {
       res = await fetchWithTimeout(`${BASE_URL}/storage/upload`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token || SUPABASE_ANON_KEY}` },
+        headers: {
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          ...(token ? { "X-Admin-Token": token } : {}),
+        },
         body: formData,
         timeout: 60_000, // 파일 업로드는 60초
       });

@@ -27,7 +27,7 @@ const supabaseAdmin = createClient(
 
 const app = new Hono();
 app.use("*", logger(console.log));
-app.use("/*", cors({ origin: "*", allowHeaders: ["Content-Type", "Authorization"], allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], exposeHeaders: ["Content-Length"], maxAge: 600 }));
+app.use("/*", cors({ origin: "*", allowHeaders: ["Content-Type", "Authorization", "X-Admin-Token"], allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], exposeHeaders: ["Content-Length"], maxAge: 600 }));
 
 const BASE = "/make-server-c3ee322d";
 
@@ -124,7 +124,8 @@ const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24시간
 const DOC_TOKEN_EXPIRY_MS = 30 * 60 * 1000; // 30분
 
 async function requireAuth(c: any): Promise<{ user: any; role: any } | null> {
-  const token = c.req.header("Authorization")?.split(" ")[1] || "";
+  // X-Admin-Token 커스텀 헤더 우선, 없으면 Authorization에서 추출
+  const token = c.req.header("X-Admin-Token") || c.req.header("Authorization")?.split(" ")[1] || "";
   const userId = db.parseAdminToken(token);
   if (!userId) return null;
   // 토큰 만료 검증
