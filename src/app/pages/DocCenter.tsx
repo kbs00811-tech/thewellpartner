@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Link } from "react-router";
-import { FileText, Shield, Lock, ArrowRight, CheckCircle2, Loader2, Download, Eye, AlertCircle, ChevronLeft, User, Calendar, Phone, Hash, UserPlus } from "lucide-react";
+import { FileText, Shield, ArrowRight, CheckCircle2, Loader2, Download, Eye, AlertCircle, User, Calendar, Hash, UserPlus } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { motion, AnimatePresence } from "motion/react";
@@ -10,7 +10,7 @@ import { PageHero } from "../components/shared";
 import { useSEO } from "../lib/useSEO";
 import { handleError } from "../lib/error-handler";
 
-type Step = "verify" | "code" | "documents";
+type Step = "verify" | "documents";
 
 function generateCertPDF(docType: string, employee: any): Blob {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -105,23 +105,8 @@ export default function DocCenter() {
   const [error, setError] = useState("");
   const [issuingDoc, setIssuingDoc] = useState<string | null>(null);
 
-  // Verify form
-  const [verifyForm, setVerifyForm] = useState({ employeeNo: "", name: "", birthDate: "", mobile: "" });
-
-  // Code verification
-  const [requestId, setRequestId] = useState("");
-  const [demoCode, setDemoCode] = useState("");
-  const [codeInput, setCodeInput] = useState("");
-  const [timer, setTimer] = useState(180);
-
-  // Timer cleanup ref
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
+  // Verify form (핸드폰 인증 제거 — 사번+이름+생년월일만)
+  const [verifyForm, setVerifyForm] = useState({ employeeNo: "", name: "", birthDate: "" });
 
   // Document access
   const [docToken, setDocToken] = useState("");
@@ -129,58 +114,35 @@ export default function DocCenter() {
   const [availableDocs, setAvailableDocs] = useState<any[]>([]);
   const [payrollDocs, setPayrollDocs] = useState<any[]>([]);
 
-  // Step 1: Send verification code
-  const handleSendCode = async (e: React.FormEvent) => {
+  // 직접 인증 (SMS 없이 사번+이름+생년월일로 바로 인증)
+  const handleDirectVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const res = await api.publicDocs.sendCode({
+      // send-code → verify-code 를 한번에 처리
+      const sendRes = await api.publicDocs.sendCode({
         employeeNo: verifyForm.employeeNo,
         name: verifyForm.name,
         birthDate: verifyForm.birthDate,
-        mobile: verifyForm.mobile,
+        mobile: "000-0000-0000", // 더미값
       });
-      setRequestId(res.requestId);
-      setDemoCode(res.demoCode || "");
-      setStep("code");
-      // Start timer
-      if (timerRef.current) clearInterval(timerRef.current);
-      let t = 180;
-      setTimer(t);
-      timerRef.current = setInterval(() => {
-        t--;
-        setTimer(t);
-        if (t <= 0) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
-      }, 1000);
-    } catch (e: any) {
-      setError(e.message || "인증번호 발송에 실패했습니다.");
-    } finally { setLoading(false); }
-  };
-
-  // Step 2: Verify code
-  const handleVerifyCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      const res = await api.publicDocs.verifyCode({ requestId, code: codeInput });
-      setDocToken(res.accessToken);
+      // 데모 모드이므로 demoCode로 바로 인증
+      const code = sendRes.demoCode || "000000";
+      const verifyRes = await api.publicDocs.verifyCode({ requestId: sendRes.requestId, code });
+      setDocToken(verifyRes.accessToken);
       // Load available documents
-      const docsRes = await api.publicDocs.getAvailable(res.accessToken);
+      const docsRes = await api.publicDocs.getAvailable(verifyRes.accessToken);
       setEmployeeInfo(docsRes.employee);
       setAvailableDocs(docsRes.documents || []);
       // Load payroll
       try {
-        const payRes = await api.publicDocs.getPayroll(res.accessToken);
+        const payRes = await api.publicDocs.getPayroll(verifyRes.accessToken);
         setPayrollDocs(payRes || []);
       } catch { setPayrollDocs([]); }
       setStep("documents");
     } catch (e: any) {
-      setError(e.message || "인증에 실패했습니다.");
+      setError(e.message || "인증에 실패했습니다. 입력 정보를 확인해주세요.");
     } finally { setLoading(false); }
   };
 
@@ -189,10 +151,7 @@ export default function DocCenter() {
     if (!docToken || !employeeInfo) return;
     setIssuingDoc(docType);
     try {
-      // Record issuance on server
       await api.publicDocs.issueDoc(docToken, { docType, docTypeName: docName });
-
-      // Generate PDF
       const blob = generateCertPDF(docType, employeeInfo);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -214,8 +173,6 @@ export default function DocCenter() {
     }
   }, [docToken, employeeInfo]);
 
-  const formatTimer = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-
   return (
     <div className="w-full">
       {/* Hero */}
@@ -231,11 +188,10 @@ export default function DocCenter() {
           <div className="flex items-center justify-center gap-4">
             {[
               { key: "verify", label: "본인인증", num: 1 },
-              { key: "code", label: "인증확인", num: 2 },
-              { key: "documents", label: "서류발급", num: 3 },
+              { key: "documents", label: "서류발급", num: 2 },
             ].map((s, i) => {
               const isActive = s.key === step;
-              const isDone = (step === "code" && s.num === 1) || (step === "documents" && s.num <= 2);
+              const isDone = step === "documents" && s.num === 1;
               return (
                 <div key={s.key} className="flex items-center gap-3">
                   {i > 0 && <div className={`w-12 h-0.5 ${isDone || isActive ? "bg-[var(--brand-blue)]" : "bg-gray-300"}`} />}
@@ -277,7 +233,7 @@ export default function DocCenter() {
                     </div>
                   )}
 
-                  <form onSubmit={handleSendCode} className="space-y-5">
+                  <form onSubmit={handleDirectVerify} className="space-y-5">
                     <div>
                       <Label className="flex items-center gap-1.5 mb-1.5"><Hash size={14} />사번 *</Label>
                       <Input placeholder="예: EMP-001" required value={verifyForm.employeeNo} onChange={(e) => setVerifyForm({ ...verifyForm, employeeNo: e.target.value })} />
@@ -290,20 +246,10 @@ export default function DocCenter() {
                       <Label className="flex items-center gap-1.5 mb-1.5"><Calendar size={14} />생년월일 *</Label>
                       <Input type="date" required value={verifyForm.birthDate} onChange={(e) => setVerifyForm({ ...verifyForm, birthDate: e.target.value })} />
                     </div>
-                    <div>
-                      <Label className="flex items-center gap-1.5 mb-1.5"><Phone size={14} />휴대폰 번호 *</Label>
-                      <Input placeholder="010-0000-0000" required value={verifyForm.mobile} onChange={(e) => setVerifyForm({ ...verifyForm, mobile: e.target.value })} />
-                    </div>
-                    <button type="submit" disabled={loading} className="w-full py-4 rounded-xl text-white font-semibold text-lg transition-all hover:shadow-lg hover:shadow-blue-500/25 flex items-center justify-center gap-2 disabled:opacity-50" style={{ backgroundColor: "var(--brand-orange)" }}>
-                      {loading ? <Loader2 size={20} className="animate-spin" /> : <>인증번호 발송<ArrowRight size={20} /></>}
+                    <button type="submit" disabled={loading} className="w-full py-4 rounded-xl text-white font-semibold text-lg transition-all hover:shadow-lg hover:shadow-blue-500/25 flex items-center justify-center gap-2 disabled:opacity-50" style={{ backgroundColor: "var(--brand-blue)" }}>
+                      {loading ? <Loader2 size={20} className="animate-spin" /> : <>본인인증 및 서류조회<ArrowRight size={20} /></>}
                     </button>
                   </form>
-
-                  <div className="mt-5 p-4 rounded-xl bg-gray-50 text-xs text-gray-400 space-y-1">
-                    <div className="font-semibold text-gray-500">테스트 계정</div>
-                    <div>사번: EMP-001 / 이름: 박성민</div>
-                    <div>사번: EMP-004 / 이름: 최동현</div>
-                  </div>
 
                   <div className="mt-4 p-4 rounded-xl border border-blue-100 bg-blue-50/50">
                     <div className="flex items-center gap-2 mb-2">
@@ -319,54 +265,7 @@ export default function DocCenter() {
               </motion.div>
             )}
 
-            {/* STEP 2: Enter Code */}
-            {step === "code" && (
-              <motion.div key="code" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm">
-                  <button onClick={() => { setStep("verify"); setError(""); }} className="flex items-center gap-1 text-sm font-medium mb-6 text-gray-400 hover:text-gray-600">
-                    <ChevronLeft size={16} />이전 단계
-                  </button>
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, var(--brand-blue), var(--brand-navy))" }}>
-                      <Lock className="text-white" size={24} />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-bold" style={{ color: "var(--brand-navy)" }}>인증번호 확인</h2>
-                      <p className="text-sm text-gray-400">발송된 인증번호를 입력해주세요</p>
-                    </div>
-                  </div>
-
-                  {error && (
-                    <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 text-red-600 text-sm mb-5">
-                      <AlertCircle size={16} />{error}
-                    </div>
-                  )}
-
-                  {demoCode && (
-                    <div className="p-4 rounded-xl bg-blue-50 mb-5">
-                      <div className="text-xs text-blue-500 font-semibold mb-1">데모 모드 - 인증번호</div>
-                      <div className="text-2xl font-bold tracking-wider" style={{ color: "var(--brand-blue)" }}>{demoCode}</div>
-                    </div>
-                  )}
-
-                  <form onSubmit={handleVerifyCode} className="space-y-5">
-                    <div>
-                      <Label className="mb-1.5">인증번호 6자리 *</Label>
-                      <Input placeholder="000000" maxLength={6} required value={codeInput} onChange={(e) => setCodeInput(e.target.value.replace(/\D/g, "").slice(0, 6))} className="text-center text-2xl tracking-[0.5em] font-bold" />
-                      <div className="flex justify-between mt-2">
-                        <span className="text-xs text-gray-400">유효시간: <span className={`font-bold ${timer < 30 ? "text-red-500" : "text-[var(--brand-blue)]"}`}>{formatTimer(timer)}</span></span>
-                        <button type="button" onClick={() => { setStep("verify"); }} className="text-xs text-[var(--brand-blue)] font-semibold hover:underline">재발송</button>
-                      </div>
-                    </div>
-                    <button type="submit" disabled={loading || codeInput.length < 6} className="w-full py-4 rounded-xl text-white font-semibold text-lg transition-all hover:shadow-lg hover:shadow-blue-500/25 flex items-center justify-center gap-2 disabled:opacity-50" style={{ backgroundColor: "var(--brand-blue)" }}>
-                      {loading ? <Loader2 size={20} className="animate-spin" /> : <>인증 확인<ArrowRight size={20} /></>}
-                    </button>
-                  </form>
-                </div>
-              </motion.div>
-            )}
-
-            {/* STEP 3: Documents */}
+            {/* STEP 2: Documents */}
             {step === "documents" && (
               <motion.div key="documents" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
                 {/* Employee Info Card */}
@@ -445,7 +344,7 @@ export default function DocCenter() {
                   )}
                 </div>
 
-                <button onClick={() => { setStep("verify"); setDocToken(""); setError(""); setCodeInput(""); setVerifyForm({ employeeNo: "", name: "", birthDate: "", mobile: "" }); }} className="w-full py-3 rounded-xl text-sm font-semibold border border-gray-200 text-gray-500 hover:bg-gray-50 transition-all">
+                <button onClick={() => { setStep("verify"); setDocToken(""); setError(""); setVerifyForm({ employeeNo: "", name: "", birthDate: "" }); }} className="w-full py-3 rounded-xl text-sm font-semibold border border-gray-200 text-gray-500 hover:bg-gray-50 transition-all">
                   다른 직원 인증하기
                 </button>
               </motion.div>
@@ -470,7 +369,7 @@ export default function DocCenter() {
                   { name: "원천징수영수증", method: "관리자 업로드" },
                 ].map((doc, i) => (
                   <li key={i} className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2"><CheckCircle2 size={14} style={{ color: "var(--brand-orange)" }} />{doc.name}</span>
+                    <span className="flex items-center gap-2"><CheckCircle2 size={14} style={{ color: "var(--brand-blue)" }} />{doc.name}</span>
                     <span className="text-xs text-gray-400 px-2 py-0.5 rounded-md bg-gray-50">{doc.method}</span>
                   </li>
                 ))}
@@ -479,13 +378,12 @@ export default function DocCenter() {
             <div className="bg-white rounded-2xl p-7 border border-gray-100">
               <h3 className="font-bold mb-4" style={{ color: "var(--brand-navy)" }}>이용 안내</h3>
               <ul className="space-y-2.5 text-sm" style={{ color: "var(--brand-gray-dark)" }}>
-                <li className="flex items-start gap-2"><span className="text-[var(--brand-blue)] font-bold">1.</span>사번과 이름을 입력하여 본인인증을 진행합니다</li>
-                <li className="flex items-start gap-2"><span className="text-[var(--brand-blue)] font-bold">2.</span>휴대폰으로 발송된 인증번호를 입력합니다</li>
-                <li className="flex items-start gap-2"><span className="text-[var(--brand-blue)] font-bold">3.</span>인증 완료 후 필요한 서류를 다운로드합니다</li>
-                <li className="flex items-start gap-2"><span className="text-[var(--brand-blue)] font-bold">4.</span>인증 유효시간은 3분이며, 만료 시 재발송이 필요합니다</li>
+                <li className="flex items-start gap-2"><span className="text-[var(--brand-blue)] font-bold">1.</span>사번, 이름, 생년월일을 입력하여 본인인증을 진행합니다</li>
+                <li className="flex items-start gap-2"><span className="text-[var(--brand-blue)] font-bold">2.</span>인증 완료 후 필요한 서류를 다운로드합니다</li>
+                <li className="flex items-start gap-2"><span className="text-[var(--brand-blue)] font-bold">3.</span>증명서는 PDF로 자동 생성되어 다운로드됩니다</li>
               </ul>
-              <div className="mt-4 p-3 rounded-xl bg-yellow-50 text-xs text-yellow-700">
-                <strong>문의:</strong> 서류 발급 관련 문의는 031-XXX-XXXX로 연락주세요.
+              <div className="mt-4 p-3 rounded-xl bg-blue-50 text-xs text-blue-700">
+                <strong>문의:</strong> 서류 발급 관련 문의는 대표전화로 연락주세요.
               </div>
             </div>
           </div>
