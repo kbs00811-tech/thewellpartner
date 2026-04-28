@@ -3,7 +3,20 @@
     "allow": [
       "Bash(npx tsx -e ' *)",
       "Bash(node -e ' *)",
-      "Bash(npm i *)"
+      "Bash(npm i *)",
+      "Bash(supabase --version)",
+      "Bash(SUPABASE_ACCESS_TOKEN=\"sbp_dbef3cefaef995da7fe7e0db40596a262f12805c\" npx supabase functions deploy make-server-c3ee322d --project-ref ldgbxbutwxiixatlfpgq --no-verify-jwt)",
+      "Bash(curl -sk -X POST https://ldgbxbutwxiixatlfpgq.supabase.co/functions/v1/make-server-c3ee322d/email/send -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkZ2J4YnV0d3hpaXhhdGxmcGdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNDE3NjgsImV4cCI6MjA4ODgxNzc2OH0.oRgpDESfx0_urvz5GKL1lSF4LVSQhjcNPH7L5XMjLOM' -H 'X-Admin-Token: twp-admin-1-__CMDSUB_OUTPUT__000' -H 'Content-Type: application/json' -d '{\"to\":\"kbs00811@gmail.com\",\"subject\":\"[더웰파트너] 이메일 시스템 테스트\",\"html\":\"<h2>축하합니다!</h2><p>Resend 이메일 발송 시스템이 정상 작동합니다.</p>\"}')",
+      "Bash(curl -sk -X POST https://ldgbxbutwxiixatlfpgq.supabase.co/functions/v1/make-server-c3ee322d/admin/login -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkZ2J4YnV0d3hpaXhhdGxmcGdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNDE3NjgsImV4cCI6MjA4ODgxNzc2OH0.oRgpDESfx0_urvz5GKL1lSF4LVSQhjcNPH7L5XMjLOM' -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"admin1234\"}')",
+      "Bash(cp \"c:/Users/USER/OneDrive/문서/카카오톡 받은 파일/\\(주\\)엘티와이 출근부_26.03월_더웰.pdf\" \"/tmp/attendance.pdf\")",
+      "Bash(cp \"c:/Users/USER/OneDrive/문서/카카오톡 받은 파일/엘티와이 출근부/\\(주\\)엘티와이 출근부_26.03월_더웰.pdf\" \"/tmp/attendance.pdf\")",
+      "Bash(cp /tmp/node_modules -r ./)",
+      "Bash(ln -sf /tmp/node_modules ./node_modules)",
+      "Bash(node build-march.js)"
+    ],
+    "additionalDirectories": [
+      "\\tmp\\attendance-work",
+      "C:\\Users\\USER\\AppData\\Local\\Temp\\attendance-work"
     ]
   }
 }

@@ -1,10 +1,11 @@
-import { useState, useRef } from "react";
-import { Upload, FileSpreadsheet, Download, Eye, Loader2, CheckCircle2, AlertCircle, Mail } from "lucide-react";
+import { useState, useRef, useCallback } from "react";
+import { Upload, FileSpreadsheet, Download, Eye, Loader2, CheckCircle2, AlertCircle, Mail, FileText } from "lucide-react";
 import * as XLSX from "xlsx";
 import * as api from "../../lib/api";
 import { handleError, handleSuccess } from "../../lib/error-handler";
 import { renderDetailedBilling, generatePDFFromHTML, downloadPDF } from "../../lib/documents/templates";
 import type { DetailedBillingData, CompanyInfo } from "../../lib/documents/types";
+import { parsePDFAttendance, classifyHours } from "../../lib/documents/pdfParser";
 
 // 엑셀 → DetailedBillingData 변환
 function parseExcelToBilling(workbook: XLSX.WorkBook): DetailedBillingData | null {
@@ -151,6 +152,10 @@ export default function AdminBillingImport() {
   const [companyInfo, setCompanyInfo] = useState<any>(null);
   const [emailRecipient, setEmailRecipient] = useState("");
   const [showEmail, setShowEmail] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [parsedFromPDF, setParsedFromPDF] = useState(false);
+  const [defaultHourlyRate, setDefaultHourlyRate] = useState(10320);
+  const [clientNameOverride, setClientNameOverride] = useState("");
 
   const company: CompanyInfo = {
     name: companyInfo?.company_name || "주식회사 더웰파트너",
@@ -162,28 +167,129 @@ export default function AdminBillingImport() {
     sealUrl: "/seal.png",
   };
 
-  // 엑셀 업로드 처리
+  // PDF → DetailedBillingData 변환
+  const buildBillingFromPDF = (parsed: any, hourlyRate: number, clientName: string): DetailedBillingData => {
+    const employees = parsed.employees.map((emp: any, i: number) => {
+      let workDays = 0, workHours = 0, overtimeHours = 0, holidayHours = 0, holidayOTHours = 0;
+      for (const [day, info] of Object.entries(emp.days || {}) as any) {
+        const d = parseInt(day);
+        const isWeekend = [7, 14, 21, 28, 1, 8, 15, 22, 29].includes(d);
+        const r = classifyHours(info.start, info.end, info.overtime, isWeekend, info.note);
+        if (r.기본 > 0 || r.특근 > 0) workDays++;
+        workHours += r.기본;
+        overtimeHours += r.연장;
+        holidayHours += r.특근;
+        holidayOTHours += r.특잔;
+      }
+      const rate = emp.hourlyRate || hourlyRate;
+      const basicPay = workHours * rate;
+      const otRate = Math.round(rate * 1.5);
+      const overtimePay = overtimeHours * otRate;
+      const holidayPay = holidayHours * otRate;
+      const holidayOTPay = holidayOTHours * Math.round(rate * 2);
+      const directSubtotal = basicPay + overtimePay + holidayPay + holidayOTPay;
+      const np = Math.round(directSubtotal * 0.0475);
+      const hi = Math.round(directSubtotal * 0.03595);
+      const lt = Math.round(hi * 0.1314);
+      const ei = Math.round(directSubtotal * 0.018);
+      const ia = Math.round(directSubtotal * 0.02);
+      const insTotal = np + hi + lt + ei + ia;
+      const businessTax = Math.round(directSubtotal * 0.005);
+      const profitReserve = Math.round(directSubtotal * 0.07);
+      const retirement = Math.round(directSubtotal / 12);
+      return {
+        no: i + 1, name: emp.name, gender: emp.gender || "",
+        hireDate: emp.hireDate || "", resignDate: "",
+        hourlyRate: rate,
+        workDays, workHours, overtimeHours, nightHours: 0, holidayHours, holidayOvertimeHours: holidayOTHours, lateHours: 0,
+        basicPay, overtimePay, nightPay: 0, holidayPay, holidayOvertimePay: holidayOTPay, lateDeduction: 0,
+        mealAllowance: 0, transportAllowance: 0, annualLeavePay: 0, extraPay: 0, deduction: 0,
+        directSubtotal,
+        nationalPension: np, healthInsurance: hi, longTermCare: lt, employmentInsurance: ei, industrialAccident: ia, insuranceTotal: insTotal,
+        businessIncomeTax: businessTax, profitReserve, retirement,
+        grandTotal: directSubtotal + insTotal + businessTax + profitReserve + retirement,
+      };
+    });
+    const totalDirect = employees.reduce((s: number, e: any) => s + e.directSubtotal, 0);
+    const totalIndirect = employees.reduce((s: number, e: any) => s + e.insuranceTotal + e.businessIncomeTax + e.profitReserve + e.retirement, 0);
+    const totalSupply = totalDirect + totalIndirect;
+    const vat = Math.round(totalSupply * 0.1);
+    return {
+      contractType: "PERSONAL_OUTSOURCING",
+      yearMonth: parsed.yearMonth || new Date().toISOString().slice(0, 7),
+      clientCompanyName: clientName || parsed.clientName || "(파트너사 미지정)",
+      payDate: "10일",
+      employees,
+      totalDirectCost: totalDirect,
+      totalIndirectCost: totalIndirect,
+      totalSupplyAmount: totalSupply,
+      vatAmount: vat,
+      finalAmount: totalSupply + vat,
+      insuranceRates: { nationalPension: 4.75, healthInsurance: 3.595, longTermCare: 13.14, employmentInsurance: 1.8, industrialAccident: 2.0 },
+    };
+  };
+
+  // 통합 파일 핸들러 (엑셀 + PDF 자동 분기)
   const handleFile = async (file: File) => {
     setParsing(true);
+    setParsedFromPDF(false);
     try {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
-      const parsed = parseExcelToBilling(workbook);
-      if (!parsed) {
-        handleError(new Error("엑셀에서 데이터를 추출할 수 없습니다. 양식을 확인해주세요."));
+      const ext = file.name.toLowerCase().split(".").pop() || "";
+      const isPDF = ext === "pdf" || file.type === "application/pdf";
+      const isExcel = ["xlsx", "xls"].includes(ext) || file.type.includes("spreadsheet");
+
+      if (isPDF) {
+        const parsed = await parsePDFAttendance(file);
+        if (!parsed.employees.length) {
+          handleError(new Error("PDF에서 직원 데이터를 추출할 수 없습니다."));
+          return;
+        }
+        const billingData = buildBillingFromPDF(parsed, defaultHourlyRate, clientNameOverride);
+        setData(billingData);
+        setParsedFromPDF(true);
+        handleSuccess(`PDF 파싱 완료: ${parsed.employees.length}명 / 청구합계 ${billingData.finalAmount.toLocaleString()}원`);
+      } else if (isExcel) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
+        const parsed = parseExcelToBilling(workbook);
+        if (!parsed) {
+          handleError(new Error("엑셀에서 데이터를 추출할 수 없습니다."));
+          return;
+        }
+        setData(parsed);
+        handleSuccess(`엑셀 파싱 완료: ${parsed.employees.length}명 / 청구합계 ${parsed.finalAmount.toLocaleString()}원`);
+      } else {
+        handleError(new Error("PDF 또는 Excel 파일만 지원됩니다 (.pdf / .xlsx / .xls)"));
         return;
       }
-      setData(parsed);
-      // 회사 정보 로드
+
       try {
         const settings = await api.systemSettings.get();
         setCompanyInfo(settings || {});
       } catch {/* 기본값 사용 */}
-      handleSuccess(`${parsed.employees.length}명 직원 데이터 파싱 완료. 청구합계: ${parsed.finalAmount.toLocaleString()}원`);
     } catch (e: any) {
-      handleError(e, { fallback: "엑셀 파싱 실패" });
+      handleError(e, { fallback: "파일 처리 실패" });
     } finally { setParsing(false); }
   };
+
+  // 드래그앤드롭 핸들러
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(true);
+  }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+  }, []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFile(file);
+  }, [defaultHourlyRate, clientNameOverride]);
 
   const handlePreview = () => {
     if (!data) return;
@@ -267,30 +373,71 @@ export default function AdminBillingImport() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-[var(--brand-navy)]">급여청구내역서 - 엑셀 임포트</h1>
-        <p className="text-sm text-gray-500 mt-1">기존 엑셀 양식 그대로 업로드 → PDF 발행 / 시스템 등록 / 이메일 발송</p>
+        <h1 className="text-2xl font-bold text-[var(--brand-navy)]">급여청구 PDF / Excel 자동 임포트</h1>
+        <p className="text-sm text-gray-500 mt-1">PDF 출근부 또는 Excel 청구서를 드래그하여 자동 분석 → PDF 발행 / 시스템 등록 / 이메일 발송</p>
       </div>
 
-      {/* 업로드 영역 */}
-      <div className="bg-white rounded-2xl border-2 border-dashed border-blue-200 p-10 text-center mb-6">
-        <FileSpreadsheet size={48} className="mx-auto text-blue-400 mb-3" />
-        <h3 className="text-lg font-bold text-[var(--brand-navy)] mb-2">급여청구내역서 엑셀 업로드</h3>
-        <p className="text-sm text-gray-500 mb-5">엘티와이 양식 형태의 엑셀 파일 (.xlsx)을 업로드하세요</p>
+      {/* PDF 임포트 옵션 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <div>
+          <label className="text-xs font-semibold text-gray-500 mb-1 block">기본 시급 (PDF 임포트 시 사용)</label>
+          <input type="number" value={defaultHourlyRate} onChange={(e) => setDefaultHourlyRate(Number(e.target.value))} className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm" />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-500 mb-1 block">파트너사명 (PDF에서 인식 안 될 시)</label>
+          <input type="text" value={clientNameOverride} onChange={(e) => setClientNameOverride(e.target.value)} placeholder="예: ㈜ LEY" className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm" />
+        </div>
+      </div>
+
+      {/* 드래그앤드롭 업로드 영역 */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => fileRef.current?.click()}
+        className={`bg-white rounded-2xl border-2 border-dashed p-10 text-center mb-6 cursor-pointer transition-all ${
+          dragActive
+            ? "border-[var(--brand-blue)] bg-blue-50 scale-[1.01]"
+            : parsing
+            ? "border-blue-200"
+            : "border-gray-200 hover:border-blue-200 hover:bg-blue-50/30"
+        }`}
+      >
+        <div className="flex justify-center gap-3 mb-4">
+          <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center">
+            <FileText size={26} className="text-red-500" />
+          </div>
+          <div className="w-14 h-14 rounded-2xl bg-green-50 flex items-center justify-center">
+            <FileSpreadsheet size={26} className="text-green-600" />
+          </div>
+        </div>
+        <h3 className="text-lg font-bold text-[var(--brand-navy)] mb-2">
+          {dragActive ? "여기에 놓으세요!" : parsing ? "분석 중..." : "PDF 또는 Excel 파일을 끌어놓으세요"}
+        </h3>
+        <p className="text-sm text-gray-500 mb-4">
+          PDF 출근부 (.pdf) 또는 Excel 청구서 (.xlsx, .xls) 자동 인식
+        </p>
         <input
           ref={fileRef}
           type="file"
-          accept=".xlsx,.xls"
+          accept=".xlsx,.xls,.pdf"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
           className="hidden"
         />
         <button
-          onClick={() => fileRef.current?.click()}
+          type="button"
+          onClick={(e) => { e.stopPropagation(); fileRef.current?.click(); }}
           disabled={parsing}
           className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[var(--brand-blue)] text-white font-semibold disabled:opacity-50"
         >
           {parsing ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
-          엑셀 파일 선택
+          파일 선택
         </button>
+        {parsedFromPDF && (
+          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-orange-50 text-orange-600 text-xs">
+            <AlertCircle size={12} /> PDF에서 추출 — 데이터 검증 필요
+          </div>
+        )}
       </div>
 
       {/* 파싱 결과 */}
