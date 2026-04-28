@@ -146,78 +146,43 @@ export default function Home() {
               </motion.div>
             </div>
 
-            {/* Right — Floating Glass Cards */}
+            {/* Right — Hero Image with Glass Card Overlay */}
             <div className="hidden lg:block relative h-[500px]">
-              {/* Network lines (SVG) */}
-              <svg className="absolute inset-0 w-full h-full opacity-30" viewBox="0 0 400 400">
-                <line x1="80" y1="100" x2="250" y2="160" stroke="#38BDF8" strokeWidth="0.8" />
-                <line x1="250" y1="160" x2="320" y2="280" stroke="#38BDF8" strokeWidth="0.8" />
-                <line x1="120" y1="300" x2="250" y2="160" stroke="#38BDF8" strokeWidth="0.8" />
-                <line x1="80" y1="100" x2="320" y2="280" stroke="#7DD3FC" strokeWidth="0.4" />
-                <line x1="200" y1="60" x2="320" y2="280" stroke="#7DD3FC" strokeWidth="0.4" />
-                <line x1="120" y1="300" x2="350" y2="120" stroke="#7DD3FC" strokeWidth="0.4" />
-                <circle cx="80" cy="100" r="4" fill="#0284C7" opacity="0.5" />
-                <circle cx="250" cy="160" r="4" fill="#0284C7" opacity="0.5" />
-                <circle cx="320" cy="280" r="4" fill="#0284C7" opacity="0.5" />
-                <circle cx="120" cy="300" r="4" fill="#0284C7" opacity="0.5" />
-                <circle cx="200" cy="60" r="3" fill="#38BDF8" opacity="0.4" />
-                <circle cx="350" cy="120" r="3" fill="#38BDF8" opacity="0.4" />
-              </svg>
-
-              {/* Glass Card 1 — Factory */}
               <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.3 }}
-                className="absolute top-12 left-8 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-lg shadow-[#0284C7]/5"
-                style={{ background: "rgba(255,255,255,0.7)" }}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.9 }}
+                className="relative h-full rounded-3xl overflow-hidden shadow-2xl shadow-[#0284C7]/15"
+              >
+                <img src="/images/hero/hero-bg.png" alt="더웰파트너 산업 현장" className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-tr from-[#0F172A]/30 via-transparent to-transparent" />
+              </motion.div>
+
+              {/* Floating Glass Card — Top */}
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.8, delay: 0.4 }}
+                className="absolute top-8 -left-6 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-xl shadow-[#0284C7]/15"
+                style={{ background: "rgba(255,255,255,0.85)" }}
               >
                 <Factory size={22} className="text-[#0284C7] mb-2" />
                 <div className="text-sm font-semibold text-[#0F172A]">생산도급</div>
                 <div className="text-xs text-[#64748B]">Manufacturing</div>
               </motion.div>
 
-              {/* Glass Card 2 — Users */}
+              {/* Floating Glass Card — Bottom */}
               <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.5 }}
-                className="absolute top-32 right-4 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-lg shadow-[#0284C7]/5"
-                style={{ background: "rgba(255,255,255,0.7)" }}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.8, delay: 0.6 }}
+                className="absolute bottom-8 -right-4 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-xl shadow-[#0284C7]/15"
+                style={{ background: "rgba(255,255,255,0.85)" }}
               >
                 <Users size={22} className="text-[#0EA5E9] mb-2" />
                 <div className="text-sm font-semibold text-[#0F172A]">인력파견</div>
                 <div className="text-xs text-[#64748B]">Staffing</div>
               </motion.div>
-
-              {/* Glass Card 3 — GraduationCap */}
-              <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.7 }}
-                className="absolute bottom-32 left-16 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-lg shadow-[#0284C7]/5"
-                style={{ background: "rgba(255,255,255,0.7)" }}
-              >
-                <GraduationCap size={22} className="text-[#0284C7] mb-2" />
-                <div className="text-sm font-semibold text-[#0F172A]">교육훈련</div>
-                <div className="text-xs text-[#64748B]">Training</div>
-              </motion.div>
-
-              {/* Glass Card 4 — Building */}
-              <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.9 }}
-                className="absolute bottom-12 right-16 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-lg shadow-[#0284C7]/5"
-                style={{ background: "rgba(255,255,255,0.7)" }}
-              >
-                <Building2 size={22} className="text-[#0EA5E9] mb-2" />
-                <div className="text-sm font-semibold text-[#0F172A]">시설관리</div>
-                <div className="text-xs text-[#64748B]">Facility</div>
-              </motion.div>
-
-              {/* Center glow orb */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full opacity-20 blur-[80px]" style={{ background: "#38BDF8" }} />
             </div>
 
           </div>

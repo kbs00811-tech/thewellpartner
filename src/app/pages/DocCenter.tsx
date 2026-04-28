@@ -192,6 +192,7 @@ export default function DocCenter() {
         label="Document Center"
         title="서류발급센터"
         subtitle="재직증명서, 급여명세서 등 각종 서류를 온라인으로 간편하게 발급받으세요"
+        bgImage="/images/pages/docs-header.png"
       />
 
       {/* Steps Indicator */}

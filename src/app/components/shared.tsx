@@ -24,14 +24,21 @@ interface PageHeroProps {
   label: string;
   title: string;
   subtitle: string;
+  bgImage?: string;
 }
 
-export function PageHero({ label, title, subtitle }: PageHeroProps) {
+export function PageHero({ label, title, subtitle, bgImage }: PageHeroProps) {
   return (
     <section
       className="relative pt-36 pb-20 overflow-hidden"
       style={{ background: "linear-gradient(160deg, #0F172A 0%, #1E293B 100%)" }}
     >
+      {bgImage && (
+        <>
+          <img src={bgImage} alt="" className="absolute inset-0 w-full h-full object-cover opacity-25" aria-hidden="true" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0F172A] via-[#0F172A]/80 to-[#0F172A]/40" />
+        </>
+      )}
       {/* Dot grid pattern */}
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none"
         style={{ backgroundImage: "radial-gradient(circle, #38BDF8 1px, transparent 1px)", backgroundSize: "32px 32px" }}

@@ -105,6 +105,7 @@ export default function Recruit() {
         label="Jobs"
         title="채용정보"
         subtitle="다양한 직무와 근무 조건의 채용 공고를 확인하세요"
+        bgImage="/images/pages/recruit-header.png"
       />
 
       {showApplicationForm && selectedJob ? (

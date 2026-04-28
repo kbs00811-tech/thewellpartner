@@ -111,6 +111,7 @@ export default function EmployeeRegister() {
         label="Employee Registration"
         title="사원 등록"
         subtitle="사원 등록을 통해 사번을 발급받고, 서류발급센터를 이용하세요"
+        bgImage="/images/pages/recruit-header.png"
       />
 
       {/* Mode Selection or Form */}
