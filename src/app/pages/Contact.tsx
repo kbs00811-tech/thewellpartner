@@ -10,7 +10,6 @@ import { motion } from "motion/react";
 import * as api from "../lib/api";
 import { PageHero } from "../components/shared";
 import { useCompanyInfo, display } from "../components/CompanyInfoContext";
-import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 import { useSEO } from "../lib/useSEO";
 import { companyInquirySchema, seekerInquirySchema, formatZodErrors } from "../lib/schemas";
 import { handleError, handleSuccess } from "../lib/error-handler";
@@ -320,30 +319,31 @@ export default function Contact() {
           </div>
 
           <div className="grid lg:grid-cols-5 gap-6">
-            <div className="lg:col-span-3 relative rounded-2xl overflow-hidden border border-gray-100 bg-gray-100" style={{ minHeight: 360 }}>
-              <ImageWithFallback
-                src="https://images.unsplash.com/photo-1660602738577-7277a9354341?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBvZmZpY2UlMjBidWlsZGluZyUyMGV4dGVyaW9yJTIwa29yZWF8ZW58MXx8fHwxNzczNjE0NjMwfDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-                alt="더웰파트너 본사"
+            <div className="lg:col-span-3 relative rounded-2xl overflow-hidden border border-gray-100 bg-gray-100" style={{ minHeight: 420 }}>
+              <iframe
+                src={`https://map.kakao.com/?q=${encodeURIComponent(address)}&urlLevel=3&urlX=&urlY=&map_type=TYPE_MAP`}
+                title="더웰파트너 본사 약도"
+                width="100%"
+                height="100%"
+                style={{ border: 0, minHeight: 420 }}
                 loading="lazy"
-                className="w-full h-full object-cover"
-                style={{ minHeight: 360 }}
+                referrerPolicy="no-referrer-when-downgrade"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-6">
-                <div className="flex items-center gap-2 text-white mb-2">
-                  <MapPin size={18} />
-                  <span className="font-bold text-lg">더웰파트너 본사</span>
+              <div className="absolute top-4 left-4 px-4 py-2.5 rounded-xl bg-white/95 backdrop-blur-sm shadow-lg pointer-events-none">
+                <div className="flex items-center gap-2" style={{ color: "var(--brand-navy)" }}>
+                  <MapPin size={16} style={{ color: "var(--brand-blue)" }} />
+                  <span className="font-bold text-sm">더웰파트너 본사</span>
                 </div>
-                <p className="text-white/80 text-sm">{address}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{address}</p>
               </div>
               <a
                 href={`https://map.kakao.com/link/search/${encodeURIComponent(address)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="absolute top-4 right-4 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/90 backdrop-blur-sm text-sm font-semibold shadow-lg hover:bg-white transition-colors"
+                className="absolute top-4 right-4 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/95 backdrop-blur-sm text-sm font-semibold shadow-lg hover:bg-white transition-colors"
                 style={{ color: "var(--brand-blue)" }}
               >
-                <Navigation size={14} />카카오맵에서 보기<ExternalLink size={12} />
+                <Navigation size={14} />길찾기<ExternalLink size={12} />
               </a>
             </div>
 
