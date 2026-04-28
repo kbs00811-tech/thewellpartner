@@ -144,6 +144,80 @@ export interface TaxInvoiceData {
   receiptType: "영수" | "청구";   // 영수 / 청구
 }
 
+// 인적 도급 청구내역서 (엘티와이 형식 — 직원별 상세 표)
+export interface DetailedBillingData {
+  contractType: ContractType;
+  yearMonth: string;            // 2026-04
+  clientCompanyName: string;    // ㈜ LEY
+  payDate: string;              // 10일
+
+  // 직원별 행
+  employees: Array<{
+    no: number;
+    name: string;
+    gender: string;             // 남/여
+    hireDate: string;
+    resignDate?: string;
+    hourlyRate: number;         // 시급
+
+    // 근태
+    workDays: number;           // 출근일수
+    workHours: number;          // 근무시간
+    overtimeHours: number;      // 잔업시간
+    nightHours: number;         // 심야시간
+    holidayHours: number;       // 특근시간
+    holidayOvertimeHours: number;// 특근잔업
+    lateHours: number;          // 지각조퇴
+
+    // 급여
+    basicPay: number;           // 기본급
+    overtimePay: number;        // 잔업수당
+    nightPay: number;           // 심야수당
+    holidayPay: number;         // 특근수당
+    holidayOvertimePay: number; // 특근잔업수당
+    lateDeduction: number;      // 지각조퇴
+    mealAllowance: number;      // 식대
+    transportAllowance: number; // 교통비
+    annualLeavePay: number;     // 연차
+    extraPay: number;           // 원단수당
+    deduction: number;          // 공제
+
+    // 직접비 소계 = 위 급여 합계
+    directSubtotal: number;
+
+    // 4대보험 (간접비)
+    nationalPension: number;    // 국민연금
+    healthInsurance: number;    // 건강보험
+    longTermCare: number;       // 장기요양
+    employmentInsurance: number;// 고용보험
+    industrialAccident: number; // 산재보험
+    insuranceTotal: number;     // 4대보험 합계
+
+    // 추가 간접비
+    businessIncomeTax: number;  // 사업소세
+    profitReserve: number;      // 이익준비금 7%
+    retirement: number;         // 퇴직금
+
+    grandTotal: number;         // 총 합계
+  }>;
+
+  // 전체 합계
+  totalDirectCost: number;      // 직접비 합계 (직원 임금)
+  totalIndirectCost: number;    // 간접비 합계 (4대보험 + 사업소세 + 이익준비금 + 퇴직금)
+  totalSupplyAmount: number;    // 공급가액 (직접+간접)
+  vatAmount: number;            // 부가세 10%
+  finalAmount: number;          // 청구합계
+
+  // 4대보험 요율 (snapshot — 시점 기록)
+  insuranceRates: {
+    nationalPension: number;    // 4.75
+    healthInsurance: number;    // 3.595
+    longTermCare: number;       // 13.14
+    employmentInsurance: number;// 1.8
+    industrialAccident: number; // 2.0
+  };
+}
+
 // 급여명세서 데이터
 export interface PayslipData {
   employeeName: string;

@@ -78,6 +78,7 @@ const menuItems: MenuItem[] = [
       { name: "급여명세서", path: `${A}/payroll`, icon: FileSpreadsheet },
       { name: "정산 관리", path: `${A}/settlement`, icon: TrendingUp },
       { name: "계약·청구 양식", path: `${A}/contract-docs`, icon: FileText },
+      { name: "급여청구 엑셀 임포트", path: `${A}/billing-import`, icon: FileSpreadsheet },
     ],
   },
   {

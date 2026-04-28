@@ -4,7 +4,7 @@
  * - A4 인쇄 최적화 (794×1123px @ 96dpi)
  * - 한국 표준 양식 (흑백 + 빨강 직인)
  */
-import type { ContractData, InvoiceData, TaxInvoiceData, PayslipData, CompanyInfo, ClientInfo } from "./types";
+import type { ContractData, InvoiceData, TaxInvoiceData, PayslipData, DetailedBillingData, CompanyInfo, ClientInfo } from "./types";
 import { CONTRACT_TYPE_LABEL } from "./types";
 
 const CSS_BASE = `
@@ -478,10 +478,211 @@ export function renderPayslip(data: PayslipData, company: CompanyInfo): string {
 }
 
 // ────────────────────────────────────────
+// 5. 인적 도급 청구내역서 (엘티와이 양식 — 직원별 상세 표, A4 가로)
+// ────────────────────────────────────────
+
+export function renderDetailedBilling(data: DetailedBillingData, company: CompanyInfo): string {
+  const totalRow = {
+    workDays: 0, workHours: 0, overtimeHours: 0, nightHours: 0, holidayHours: 0, holidayOvertimeHours: 0, lateHours: 0,
+    basicPay: 0, overtimePay: 0, nightPay: 0, holidayPay: 0, holidayOvertimePay: 0, lateDeduction: 0,
+    mealAllowance: 0, transportAllowance: 0, annualLeavePay: 0, extraPay: 0, deduction: 0,
+    directSubtotal: 0, nationalPension: 0, healthInsurance: 0, longTermCare: 0,
+    employmentInsurance: 0, industrialAccident: 0, insuranceTotal: 0,
+    businessIncomeTax: 0, profitReserve: 0, retirement: 0, grandTotal: 0,
+  };
+  for (const e of data.employees) {
+    totalRow.workDays += e.workDays;
+    totalRow.workHours += e.workHours;
+    totalRow.overtimeHours += e.overtimeHours;
+    totalRow.nightHours += e.nightHours;
+    totalRow.holidayHours += e.holidayHours;
+    totalRow.holidayOvertimeHours += e.holidayOvertimeHours;
+    totalRow.lateHours += e.lateHours;
+    totalRow.basicPay += e.basicPay;
+    totalRow.overtimePay += e.overtimePay;
+    totalRow.nightPay += e.nightPay;
+    totalRow.holidayPay += e.holidayPay;
+    totalRow.holidayOvertimePay += e.holidayOvertimePay;
+    totalRow.lateDeduction += e.lateDeduction;
+    totalRow.mealAllowance += e.mealAllowance;
+    totalRow.transportAllowance += e.transportAllowance;
+    totalRow.annualLeavePay += e.annualLeavePay;
+    totalRow.extraPay += e.extraPay;
+    totalRow.deduction += e.deduction;
+    totalRow.directSubtotal += e.directSubtotal;
+    totalRow.nationalPension += e.nationalPension;
+    totalRow.healthInsurance += e.healthInsurance;
+    totalRow.longTermCare += e.longTermCare;
+    totalRow.employmentInsurance += e.employmentInsurance;
+    totalRow.industrialAccident += e.industrialAccident;
+    totalRow.insuranceTotal += e.insuranceTotal;
+    totalRow.businessIncomeTax += e.businessIncomeTax;
+    totalRow.profitReserve += e.profitReserve;
+    totalRow.retirement += e.retirement;
+    totalRow.grandTotal += e.grandTotal;
+  }
+
+  const cellTh = "border:1px solid #333;padding:3px 2px;background:#1E293B;color:#fff;font-weight:700;font-size:9px;text-align:center;line-height:1.2;";
+  const cellTh2 = "border:1px solid #333;padding:3px 2px;background:#475569;color:#fff;font-weight:600;font-size:8px;text-align:center;line-height:1.2;";
+  const cell = "border:1px solid #333;padding:3px 2px;font-size:9px;text-align:right;";
+  const cellC = "border:1px solid #333;padding:3px 2px;font-size:9px;text-align:center;";
+
+  // A4 가로 (1123 × 794)
+  return `
+    <div id="cert-render" style="width:1500px;min-height:1060px;background:#fff;font-family:'Pretendard','Noto Sans KR',sans-serif;padding:30px 35px;box-sizing:border-box;color:#1a1a1a;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-weight:800;font-size:16px;">${company.name}</div>
+        <div style="font-size:11px;">담당: ${company.ceoName} | TEL: ${company.phone}</div>
+      </div>
+      <h1 style="text-align:center;font-size:22px;font-weight:800;letter-spacing:6px;margin:8px 0;">${data.yearMonth.replace("-", "년 ")}월 급여청구내역서</h1>
+      <div style="text-align:center;font-size:11px;color:#475569;margin-bottom:8px;">(당월 1일 ~ 말일까지 정산분)</div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:10px;padding:6px 10px;background:#F8FAFC;border:1px solid #E2E8F0;">
+        <span><strong>사용사업자:</strong> ${data.clientCompanyName}</span>
+        <span><strong>급여일:</strong> ${data.payDate}</span>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;font-size:9px;">
+        <thead>
+          <tr>
+            <th rowspan="2" style="${cellTh}width:2.5%;">번호</th>
+            <th rowspan="2" style="${cellTh}width:5.5%;">성명</th>
+            <th rowspan="2" style="${cellTh}width:2.5%;">성별</th>
+            <th rowspan="2" style="${cellTh}width:5%;">입사일</th>
+            <th rowspan="2" style="${cellTh}width:5%;">퇴사일</th>
+            <th rowspan="2" style="${cellTh}width:4%;">시급</th>
+            <th colspan="7" style="${cellTh}">근태내역</th>
+            <th colspan="11" style="${cellTh}">급여내역</th>
+            <th rowspan="2" style="${cellTh}width:5%;">직접비<br/>소계</th>
+            <th colspan="6" style="${cellTh}">간접비 (4대보험)</th>
+            <th rowspan="2" style="${cellTh}width:4%;">사업<br/>소세</th>
+            <th rowspan="2" style="${cellTh}width:4%;">이익<br/>준비금<br/>7%</th>
+            <th rowspan="2" style="${cellTh}width:4%;">퇴직금</th>
+            <th rowspan="2" style="${cellTh}width:5%;">합계</th>
+          </tr>
+          <tr>
+            <th style="${cellTh2}">출근<br/>일수</th>
+            <th style="${cellTh2}">근무<br/>시간</th>
+            <th style="${cellTh2}">잔업<br/>시간</th>
+            <th style="${cellTh2}">심야<br/>시간</th>
+            <th style="${cellTh2}">특근<br/>시간</th>
+            <th style="${cellTh2}">특근<br/>잔업</th>
+            <th style="${cellTh2}">지각<br/>조퇴</th>
+            <th style="${cellTh2}">기본급</th>
+            <th style="${cellTh2}">잔업<br/>수당</th>
+            <th style="${cellTh2}">심야<br/>수당</th>
+            <th style="${cellTh2}">특근<br/>수당</th>
+            <th style="${cellTh2}">특근<br/>잔업</th>
+            <th style="${cellTh2}">지각<br/>조퇴</th>
+            <th style="${cellTh2}">식대</th>
+            <th style="${cellTh2}">교통비</th>
+            <th style="${cellTh2}">연차</th>
+            <th style="${cellTh2}">원단</th>
+            <th style="${cellTh2}">공제</th>
+            <th style="${cellTh2}">국민<br/>${data.insuranceRates.nationalPension}%</th>
+            <th style="${cellTh2}">건강<br/>${data.insuranceRates.healthInsurance}%</th>
+            <th style="${cellTh2}">장기<br/>${data.insuranceRates.longTermCare}%</th>
+            <th style="${cellTh2}">고용<br/>${data.insuranceRates.employmentInsurance}%</th>
+            <th style="${cellTh2}">산재<br/>${data.insuranceRates.industrialAccident}%</th>
+            <th style="${cellTh2}">합계</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.employees.map((e) => `
+            <tr>
+              <td style="${cellC}">${e.no}</td>
+              <td style="${cellC}font-weight:600;">${e.name}</td>
+              <td style="${cellC}">${e.gender}</td>
+              <td style="${cellC}font-size:8px;">${e.hireDate || "-"}</td>
+              <td style="${cellC}font-size:8px;">${e.resignDate || "-"}</td>
+              <td style="${cell}">${formatNumber(e.hourlyRate)}</td>
+              <td style="${cell}">${e.workDays || ""}</td>
+              <td style="${cell}">${e.workHours || ""}</td>
+              <td style="${cell}">${e.overtimeHours || ""}</td>
+              <td style="${cell}">${e.nightHours || ""}</td>
+              <td style="${cell}">${e.holidayHours || ""}</td>
+              <td style="${cell}">${e.holidayOvertimeHours || ""}</td>
+              <td style="${cell}">${e.lateHours || ""}</td>
+              <td style="${cell}">${formatNumber(e.basicPay)}</td>
+              <td style="${cell}">${formatNumber(e.overtimePay)}</td>
+              <td style="${cell}">${formatNumber(e.nightPay)}</td>
+              <td style="${cell}">${formatNumber(e.holidayPay)}</td>
+              <td style="${cell}">${formatNumber(e.holidayOvertimePay)}</td>
+              <td style="${cell}">${e.lateDeduction ? formatNumber(e.lateDeduction) : ""}</td>
+              <td style="${cell}">${e.mealAllowance ? formatNumber(e.mealAllowance) : ""}</td>
+              <td style="${cell}">${e.transportAllowance ? formatNumber(e.transportAllowance) : ""}</td>
+              <td style="${cell}">${e.annualLeavePay ? formatNumber(e.annualLeavePay) : ""}</td>
+              <td style="${cell}">${e.extraPay ? formatNumber(e.extraPay) : ""}</td>
+              <td style="${cell}">${e.deduction ? formatNumber(e.deduction) : ""}</td>
+              <td style="${cell}font-weight:600;background:#FEF3C7;">${formatNumber(e.directSubtotal)}</td>
+              <td style="${cell}">${formatNumber(e.nationalPension)}</td>
+              <td style="${cell}">${formatNumber(e.healthInsurance)}</td>
+              <td style="${cell}">${formatNumber(e.longTermCare)}</td>
+              <td style="${cell}">${formatNumber(e.employmentInsurance)}</td>
+              <td style="${cell}">${formatNumber(e.industrialAccident)}</td>
+              <td style="${cell}font-weight:600;">${formatNumber(e.insuranceTotal)}</td>
+              <td style="${cell}">${formatNumber(e.businessIncomeTax)}</td>
+              <td style="${cell}">${formatNumber(e.profitReserve)}</td>
+              <td style="${cell}">${formatNumber(e.retirement)}</td>
+              <td style="${cell}font-weight:700;background:#DBEAFE;">${formatNumber(e.grandTotal)}</td>
+            </tr>
+          `).join("")}
+          <tr style="background:#1E293B;color:#fff;font-weight:700;">
+            <td colspan="6" style="border:1px solid #333;padding:5px;text-align:center;font-size:10px;">합          계</td>
+            <td style="${cell}color:#fff;">${totalRow.workDays}</td>
+            <td style="${cell}color:#fff;">${totalRow.workHours}</td>
+            <td style="${cell}color:#fff;">${totalRow.overtimeHours}</td>
+            <td style="${cell}color:#fff;">${totalRow.nightHours}</td>
+            <td style="${cell}color:#fff;">${totalRow.holidayHours}</td>
+            <td style="${cell}color:#fff;">${totalRow.holidayOvertimeHours}</td>
+            <td style="${cell}color:#fff;">${totalRow.lateHours}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.basicPay)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.overtimePay)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.nightPay)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.holidayPay)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.holidayOvertimePay)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.lateDeduction)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.mealAllowance)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.transportAllowance)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.annualLeavePay)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.extraPay)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.deduction)}</td>
+            <td style="${cell}color:#fff;background:#FBBF24;color:#000;">${formatNumber(totalRow.directSubtotal)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.nationalPension)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.healthInsurance)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.longTermCare)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.employmentInsurance)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.industrialAccident)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.insuranceTotal)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.businessIncomeTax)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.profitReserve)}</td>
+            <td style="${cell}color:#fff;">${formatNumber(totalRow.retirement)}</td>
+            <td style="${cell}background:#3B82F6;color:#fff;">${formatNumber(totalRow.grandTotal)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <table style="width:50%;margin-top:10px;margin-left:auto;border-collapse:collapse;font-size:11px;border:2px solid #1E293B;">
+        <tr><td style="border:1px solid #1E293B;padding:6px 10px;background:#F8FAFC;width:40%;font-weight:700;">공급가액</td><td style="border:1px solid #1E293B;padding:6px 10px;text-align:right;font-weight:700;">${formatNumber(data.totalSupplyAmount)}원</td></tr>
+        <tr><td style="border:1px solid #1E293B;padding:6px 10px;background:#F8FAFC;font-weight:700;">부가세 (10%)</td><td style="border:1px solid #1E293B;padding:6px 10px;text-align:right;font-weight:700;">${formatNumber(data.vatAmount)}원</td></tr>
+        <tr style="background:#1E293B;color:#fff;"><td style="border:1px solid #1E293B;padding:8px 10px;font-weight:800;font-size:13px;">청구합계</td><td style="border:1px solid #1E293B;padding:8px 10px;text-align:right;font-weight:800;font-size:14px;">${formatNumber(data.finalAmount)}원</td></tr>
+      </table>
+
+      <div style="margin-top:20px;display:flex;justify-content:flex-end;align-items:flex-end;">
+        <div style="text-align:center;">
+          <div style="font-size:11px;font-weight:700;">${company.name}</div>
+          <div style="font-size:11px;margin-bottom:8px;">대표이사 ${company.ceoName}</div>
+          ${SEAL_HTML(company.name, company.sealUrl)}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ────────────────────────────────────────
 // PDF 생성 함수 (HTML → Canvas → PDF)
 // ────────────────────────────────────────
 
-export async function generatePDFFromHTML(html: string, fileName: string): Promise<Blob> {
+export async function generatePDFFromHTML(html: string, fileName: string, orientation: "p" | "l" = "p"): Promise<Blob> {
   const html2canvas = (await import("html2canvas")).default;
   const { jsPDF } = await import("jspdf");
 
@@ -495,8 +696,11 @@ export async function generatePDFFromHTML(html: string, fileName: string): Promi
   document.body.removeChild(container);
 
   const imgData = canvas.toDataURL("image/png");
-  const pdf = new jsPDF({ unit: "mm", format: "a4" });
-  pdf.addImage(imgData, "PNG", 0, 0, 210, 297);
+  const pdf = new jsPDF({ unit: "mm", format: "a4", orientation });
+  // 가로: 297×210, 세로: 210×297
+  const pageWidth = orientation === "l" ? 297 : 210;
+  const pageHeight = orientation === "l" ? 210 : 297;
+  pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight);
   return pdf.output("blob");
 }
 
