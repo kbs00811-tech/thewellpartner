@@ -15,15 +15,12 @@ const CSS_BASE = `
   position: relative;
 `;
 
-const SEAL_HTML = (companyName: string, sealUrl?: string) => sealUrl
-  ? `<img src="${sealUrl}" alt="직인" style="width:80px;height:80px;object-fit:contain;" />`
-  : `<div style="display:inline-block;width:80px;height:80px;border:3px solid #DC2626;border-radius:50%;position:relative;">
-       <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
-         <div style="font-size:9px;font-weight:800;color:#DC2626;">주식회사</div>
-         <div style="font-size:11px;font-weight:900;color:#DC2626;letter-spacing:1px;">${companyName.replace("주식회사 ", "").replace("(주)", "")}</div>
-         <div style="font-size:8px;color:#DC2626;">대표이사인</div>
-       </div>
-     </div>`;
+const SEAL_HTML = (companyName: string, sealUrl?: string) => {
+  // 절대 URL로 변환 (html2canvas CORS 우회)
+  const url = sealUrl || "/seal.png";
+  const absUrl = url.startsWith("http") ? url : `${window.location.origin}${url}`;
+  return `<img src="${absUrl}" alt="직인" crossorigin="anonymous" style="width:90px;height:90px;object-fit:contain;display:inline-block;" onerror="this.style.display='none';this.parentNode.innerHTML+='<div style=\\'display:inline-block;width:80px;height:80px;border:3px solid #DC2626;border-radius:50%;position:relative;\\'><div style=\\'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;\\'><div style=\\'font-size:9px;font-weight:800;color:#DC2626;\\'>주식회사</div><div style=\\'font-size:11px;font-weight:900;color:#DC2626;\\'>${companyName.replace("주식회사 ", "").replace("(주)", "")}</div><div style=\\'font-size:8px;color:#DC2626;\\'>대표이사인</div></div></div>'" />`;
+};
 
 const formatNumber = (n: number) => (n || 0).toLocaleString("ko-KR");
 
