@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Factory, Users, GraduationCap, Building2 } from "lucide-react";
 import { motion } from "motion/react";
-import { ProductionAnimation, StaffingAnimation, TrainingAnimation, BuildingAnimation } from "../components/BusinessAnimations";
 import { PageHero, CtaSection } from "../components/shared";
 import * as api from "../lib/api";
 import { useSEO } from "../lib/useSEO";
@@ -13,7 +12,7 @@ const DEFAULT_BUSINESSES = [
     icon: Factory,
     title: "생산/물류 도급",
     description: "맞춤형 제조 라인 시스템 설계 및 전문 기술인력 투입으로 생산 효율을 극대화합니다. 고객사의 생산 목표에 맞춘 최적의 라인 운영 솔루션을 제공합니다.",
-    animation: "production",
+    image: "/images/business/production.png",
     features: ["맞춤형 서비스 설계", "제조 라인 시스템 구축", "전문 기술인력 투입", "지속적인 관리 및 사후관리"],
   },
   {
@@ -21,7 +20,7 @@ const DEFAULT_BUSINESSES = [
     icon: Users,
     title: "인재파견",
     description: "고객 맞춤형 인력 공급과 비용 절감, 운영 효율화를 동시에 실현합니다. 즉각적인 인력 수요에 대응하여 최적의 인재를 신속하게 배치합니다.",
-    animation: "staffing",
+    image: "/images/business/staffing.png",
     features: ["고객 맞춤형 인력 공급", "비용 절감 및 효율화", "운영 리스크 최소화", "유연한 인력 운영"],
   },
   {
@@ -29,7 +28,7 @@ const DEFAULT_BUSINESSES = [
     icon: GraduationCap,
     title: "컨설팅/교육훈련",
     description: "기업 예비진단 분석 및 맞춤 교육훈련 프로그램을 제공합니다. 법정 의무교육부터 직무별 전문 교육까지 체계적으로 운영합니다.",
-    animation: "training",
+    image: "/images/business/consulting.png",
     features: ["기업 예비진단 및 분석", "법정 의무교육 실시", "맞춤 교육훈련 수립", "교육 후 개선안 반영"],
   },
   {
@@ -37,7 +36,7 @@ const DEFAULT_BUSINESSES = [
     icon: Building2,
     title: "빌딩 종합관리",
     description: "빌딩설비 및 시스템 통합관리, 정기점검 및 민원처리까지 원스톱으로 제공합니다. 건물 가치를 보전하는 전문 관리 서비스입니다.",
-    animation: "building",
+    image: "/images/business/building.png",
     features: ["빌딩설비 통합관리", "정기 점검 및 유지보수", "회계처리 및 관리비 부과", "민원 및 고충 처리"],
   },
 ];
@@ -110,10 +109,10 @@ export default function Business() {
                   </div>
                 </div>
                 <div className={`${index % 2 === 1 ? "lg:col-start-1 lg:row-start-1" : ""}`}>
-                  {biz.animation === "production" && <ProductionAnimation />}
-                  {biz.animation === "staffing" && <StaffingAnimation />}
-                  {biz.animation === "training" && <TrainingAnimation />}
-                  {biz.animation === "building" && <BuildingAnimation />}
+                  <div className="relative rounded-2xl overflow-hidden aspect-[4/3] shadow-xl shadow-black/[0.08]">
+                    <img src={biz.image} alt={biz.title} className="w-full h-full object-cover" loading="lazy" />
+                    <div className="absolute inset-0 bg-gradient-to-tr from-[#0F172A]/20 to-transparent" />
+                  </div>
                 </div>
               </motion.div>
             ))}

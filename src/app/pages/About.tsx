@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Target, Users, Award, TrendingUp, MapPin, Phone, Mail, Building, Calendar, Globe } from "lucide-react";
 import { motion } from "motion/react";
-import { PartnershipAnimation } from "../components/BusinessAnimations";
 import { PageHero } from "../components/shared";
 import { useCompanyInfo, display } from "../components/CompanyInfoContext";
 import * as api from "../lib/api";
@@ -127,7 +126,10 @@ export default function About() {
               transition={{ duration: 0.6 }}
               className="relative"
             >
-              <PartnershipAnimation />
+              <div className="relative rounded-2xl overflow-hidden aspect-[4/3] shadow-xl shadow-black/[0.08]">
+                <img src="/images/about/partnership.png" alt="파트너십" className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-tr from-[#0F172A]/15 to-transparent" />
+              </div>
             </motion.div>
             <motion.div
               initial={{ opacity: 0, x: 20 }}
