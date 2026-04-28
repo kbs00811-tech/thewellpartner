@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { motion, useInView } from "motion/react";
+import { motion, AnimatePresence, useInView } from "motion/react";
 import { Link } from "react-router";
 import {
   ArrowRight, ArrowUpRight, Factory, Users, GraduationCap, Building2,
-  FileCheck, Headphones, MapPin, DollarSign, ChevronRight, Phone,
+  FileCheck, Headphones, MapPin, DollarSign, ChevronRight, ChevronLeft, Phone,
   Home as HomeIcon,
 } from "lucide-react";
 import * as api from "../lib/api";
@@ -47,6 +47,55 @@ export default function Home() {
   const [latestNotices, setLatestNotices] = useState<any[]>([]);
   const [banners, setBanners] = useState<any[]>([]);
   const [currentBanner, setCurrentBanner] = useState(0);
+  const [heroSlide, setHeroSlide] = useState(0);
+
+  // 히어로 슬라이드 데이터 (4장)
+  const heroSlides = [
+    {
+      label: "Production Outsourcing",
+      title: "산업 현장의 성장을",
+      titleHighlight: "함께 만들어 갑니다",
+      subtitle: "제조·생산·물류·반도체 현장에 최적화된 인력 운영 파트너",
+      image: "/images/business/production.png",
+      ctaPrimary: { text: "기업 상담 신청", to: "/contact" },
+      ctaSecondary: { text: "사업분야 보기", to: "/business" },
+      icon: Factory,
+      tag: "생산도급",
+    },
+    {
+      label: "Smart Staffing Solution",
+      title: "최적의 인재를",
+      titleHighlight: "신속하게 배치합니다",
+      subtitle: "고객 맞춤형 인력 공급으로 비용 절감과 운영 효율을 실현합니다",
+      image: "/images/business/staffing.png",
+      ctaPrimary: { text: "인력 요청하기", to: "/contact" },
+      ctaSecondary: { text: "채용공고 보기", to: "/recruit" },
+      icon: Users,
+      tag: "인재파견",
+    },
+    {
+      label: "Consulting & Training",
+      title: "체계적인 교육과 컨설팅으로",
+      titleHighlight: "기업 경쟁력을 강화합니다",
+      subtitle: "법정 의무교육부터 직무별 전문 교육까지 통합 운영",
+      image: "/images/business/consulting.png",
+      ctaPrimary: { text: "컨설팅 문의", to: "/contact" },
+      ctaSecondary: { text: "서비스 보기", to: "/service" },
+      icon: GraduationCap,
+      tag: "컨설팅/교육",
+    },
+    {
+      label: "Facility Management",
+      title: "건물 가치를 보전하는",
+      titleHighlight: "전문 시설 관리",
+      subtitle: "빌딩설비 통합관리 · 정기점검 · 민원처리까지 원스톱",
+      image: "/images/business/building.png",
+      ctaPrimary: { text: "관리 상담 신청", to: "/contact" },
+      ctaSecondary: { text: "사업분야 보기", to: "/business" },
+      icon: Building2,
+      tag: "시설관리",
+    },
+  ];
 
   useEffect(() => {
     (async () => {
@@ -72,6 +121,14 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [banners.length]);
 
+  // Hero auto-slide (5초)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setHeroSlide((prev) => (prev + 1) % heroSlides.length);
+    }, 5500);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <div className="w-full">
 
@@ -92,99 +149,111 @@ export default function Home() {
         <div className="relative w-full max-w-7xl mx-auto px-5 sm:px-8 py-32 md:py-0">
           <div className="grid lg:grid-cols-2 gap-16 items-center min-h-screen lg:min-h-0 lg:py-32">
 
-            {/* Left — Text */}
-            <div>
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.8 }}
-                className="text-sm tracking-[0.2em] uppercase text-[#0284C7] mb-6 font-semibold"
-              >
-                Production Outsourcing & Staffing
-              </motion.p>
-
-              <motion.h1
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.1 }}
-                className="text-[2.5rem] sm:text-[3.5rem] md:text-[4rem] font-bold text-[#0F172A] leading-[1.1] tracking-[-0.03em] mb-7"
-              >
-                산업 현장의 성장을
-                <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0284C7] to-[#38BDF8]">함께 만들어 갑니다</span>
-              </motion.h1>
-
-              <motion.p
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.2 }}
-                className="text-lg md:text-xl text-[#64748B] leading-relaxed mb-10 max-w-lg"
-              >
-                제조·생산·물류·반도체 현장에
-                <br className="sm:hidden" /> 최적화된 인력 운영 파트너
-              </motion.p>
-
+            {/* Left — Text (슬라이드별 텍스트) */}
+            <AnimatePresence mode="wait">
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.35 }}
-                className="flex flex-col sm:flex-row gap-3"
-              >
-                <Link
-                  to="/contact"
-                  className="group inline-flex items-center gap-2.5 px-8 py-4 bg-[#0284C7] text-white font-semibold rounded-full transition-all hover:bg-[#0369A1] hover:shadow-xl hover:shadow-[#0284C7]/20"
-                >
-                  기업 상담 신청
-                  <ArrowRight size={17} className="transition-transform group-hover:translate-x-0.5" />
-                </Link>
-                <Link
-                  to="/recruit"
-                  className="inline-flex items-center gap-2.5 px-8 py-4 border border-[#CBD5E1] text-[#334155] font-medium rounded-full transition-all hover:bg-[#F0F9FF] hover:border-[#7DD3FC]"
-                >
-                  채용공고 보기
-                </Link>
-              </motion.div>
-            </div>
-
-            {/* Right — Hero Image with Glass Card Overlay */}
-            <div className="hidden lg:block relative h-[500px]">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.9 }}
-                className="relative h-full rounded-3xl overflow-hidden shadow-2xl shadow-[#0284C7]/15"
-              >
-                <img src="/images/hero/hero-bg.png" alt="더웰파트너 산업 현장" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-tr from-[#0F172A]/30 via-transparent to-transparent" />
-              </motion.div>
-
-              {/* Floating Glass Card — Top */}
-              <motion.div
+                key={`text-${heroSlide}`}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.8, delay: 0.4 }}
-                className="absolute top-8 -left-6 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-xl shadow-[#0284C7]/15"
-                style={{ background: "rgba(255,255,255,0.85)" }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.5 }}
               >
-                <Factory size={22} className="text-[#0284C7] mb-2" />
-                <div className="text-sm font-semibold text-[#0F172A]">생산도급</div>
-                <div className="text-xs text-[#64748B]">Manufacturing</div>
+                <p className="text-sm tracking-[0.2em] uppercase text-[#0284C7] mb-6 font-semibold">
+                  {heroSlides[heroSlide].label}
+                </p>
+
+                <h1 className="text-[2.5rem] sm:text-[3.5rem] md:text-[4rem] font-bold text-[#0F172A] leading-[1.1] tracking-[-0.03em] mb-7">
+                  {heroSlides[heroSlide].title}
+                  <br />
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#0284C7] to-[#38BDF8]">
+                    {heroSlides[heroSlide].titleHighlight}
+                  </span>
+                </h1>
+
+                <p className="text-lg md:text-xl text-[#64748B] leading-relaxed mb-10 max-w-lg">
+                  {heroSlides[heroSlide].subtitle}
+                </p>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Link
+                    to={heroSlides[heroSlide].ctaPrimary.to}
+                    className="group inline-flex items-center gap-2.5 px-8 py-4 bg-[#0284C7] text-white font-semibold rounded-full transition-all hover:bg-[#0369A1] hover:shadow-xl hover:shadow-[#0284C7]/20"
+                  >
+                    {heroSlides[heroSlide].ctaPrimary.text}
+                    <ArrowRight size={17} className="transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                  <Link
+                    to={heroSlides[heroSlide].ctaSecondary.to}
+                    className="inline-flex items-center gap-2.5 px-8 py-4 border border-[#CBD5E1] text-[#334155] font-medium rounded-full transition-all hover:bg-[#F0F9FF] hover:border-[#7DD3FC]"
+                  >
+                    {heroSlides[heroSlide].ctaSecondary.text}
+                  </Link>
+                </div>
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Right — Hero Image Slide */}
+            <div className="hidden lg:block relative h-[500px]">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={`img-${heroSlide}`}
+                  initial={{ opacity: 0, scale: 1.05 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.7 }}
+                  className="relative h-full rounded-3xl overflow-hidden shadow-2xl shadow-[#0284C7]/15"
+                >
+                  <img src={heroSlides[heroSlide].image} alt={heroSlides[heroSlide].tag} className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-tr from-[#0F172A]/30 via-transparent to-transparent" />
+                </motion.div>
+              </AnimatePresence>
+
+              {/* Floating Tag Card */}
+              <motion.div
+                key={`tag-${heroSlide}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.2 }}
+                className="absolute top-8 -left-6 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-xl shadow-[#0284C7]/15"
+                style={{ background: "rgba(255,255,255,0.9)" }}
+              >
+                {(() => {
+                  const Icon = heroSlides[heroSlide].icon;
+                  return <Icon size={22} className="text-[#0284C7] mb-2" />;
+                })()}
+                <div className="text-sm font-semibold text-[#0F172A]">{heroSlides[heroSlide].tag}</div>
+                <div className="text-xs text-[#64748B]">{heroSlides[heroSlide].label.split(" ")[0]}</div>
               </motion.div>
 
-              {/* Floating Glass Card — Bottom */}
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.8, delay: 0.6 }}
-                className="absolute bottom-8 -right-4 px-5 py-4 rounded-2xl border border-white/60 backdrop-blur-xl shadow-xl shadow-[#0284C7]/15"
-                style={{ background: "rgba(255,255,255,0.85)" }}
+              {/* Slide Controls */}
+              <button
+                onClick={() => setHeroSlide((p) => (p - 1 + heroSlides.length) % heroSlides.length)}
+                aria-label="이전 슬라이드"
+                className="absolute -left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white shadow-lg flex items-center justify-center text-[#0F172A] hover:bg-[#F0F9FF] transition-colors"
               >
-                <Users size={22} className="text-[#0EA5E9] mb-2" />
-                <div className="text-sm font-semibold text-[#0F172A]">인력파견</div>
-                <div className="text-xs text-[#64748B]">Staffing</div>
-              </motion.div>
+                <ChevronLeft size={20} />
+              </button>
+              <button
+                onClick={() => setHeroSlide((p) => (p + 1) % heroSlides.length)}
+                aria-label="다음 슬라이드"
+                className="absolute -right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white shadow-lg flex items-center justify-center text-[#0F172A] hover:bg-[#F0F9FF] transition-colors"
+              >
+                <ChevronRight size={20} />
+              </button>
             </div>
 
+          </div>
+
+          {/* Slide Indicators */}
+          <div className="flex justify-center gap-2 mt-6 lg:absolute lg:bottom-6 lg:left-1/2 lg:-translate-x-1/2 lg:mt-0">
+            {heroSlides.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setHeroSlide(i)}
+                aria-label={`슬라이드 ${i + 1}`}
+                className={`h-1.5 rounded-full transition-all ${i === heroSlide ? "w-10 bg-[#0284C7]" : "w-1.5 bg-[#CBD5E1] hover:bg-[#94A3B8]"}`}
+              />
+            ))}
           </div>
 
           {/* Stats strip */}
