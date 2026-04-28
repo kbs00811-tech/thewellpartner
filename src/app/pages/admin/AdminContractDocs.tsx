@@ -313,26 +313,42 @@ export default function AdminContractDocs() {
     } finally { setGenerating(false); }
   };
 
-  // 이메일 발송 (mailto: 백업 + 서버 API 시도)
+  // Blob → Base64 변환
+  const blobToBase64 = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      resolve(result.split(",")[1]); // data:application/pdf;base64,XXXX → XXXX
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+  // 이메일 발송 (Resend API 통한 자동 발송)
   const handleSendEmail = async () => {
     if (!emailModal || !emailRecipient) {
       handleError(new Error("수신자 이메일을 입력해주세요."));
       return;
     }
     try {
-      // 1. 서버 API 호출 시도
-      const formData = new FormData();
-      formData.append("to", emailRecipient);
-      formData.append("subject", `[${company.name}] ${emailModal.fileName.replace(".pdf", "")}`);
-      formData.append("body", emailMessage || "첨부된 양식을 확인해주세요.");
-      formData.append("attachment", emailModal.blob, emailModal.fileName);
-      // 서버 API 미구현 시 대비 - mailto 링크로 폴백
-      const subject = encodeURIComponent(`[${company.name}] ${emailModal.fileName.replace(".pdf", "")}`);
-      const body = encodeURIComponent(`${emailMessage}\n\n첨부 파일: ${emailModal.fileName}\n(파일은 별도로 첨부됩니다)`);
-      window.open(`mailto:${emailRecipient}?subject=${subject}&body=${body}`);
-      // PDF 자동 다운로드 (이메일 첨부용)
-      downloadPDF(emailModal.blob, emailModal.fileName);
-      handleSuccess("메일 클라이언트가 열렸습니다. PDF를 첨부해 발송해주세요.");
+      const pdfBase64 = await blobToBase64(emailModal.blob);
+      const html = `
+        <div style="font-family:'Pretendard',sans-serif;max-width:600px;margin:0 auto;padding:30px;">
+          <h2 style="color:#0F172A;">${company.name}</h2>
+          <p>${emailMessage || "첨부된 양식을 확인 부탁드립니다."}</p>
+          <p style="color:#64748B;font-size:13px;margin-top:30px;">
+            본 메일은 자동 발송되었으며, 회신은 ${company.email} 로 부탁드립니다.
+          </p>
+        </div>
+      `;
+      await api.emailApi.send({
+        to: emailRecipient,
+        subject: `[${company.name}] ${emailModal.fileName.replace(".pdf", "")}`,
+        html,
+        attachments: [{ filename: emailModal.fileName, content: pdfBase64 }],
+        replyTo: company.email,
+      });
+      handleSuccess(`${emailRecipient} 으로 이메일이 발송되었습니다.`);
       setEmailModal(null);
       setEmailRecipient("");
       setEmailMessage("");

@@ -31,6 +31,42 @@ app.use("/*", cors({ origin: "*", allowHeaders: ["Content-Type", "Authorization"
 
 const BASE = "/make-server-c3ee322d";
 
+// ──── Resend 이메일 발송 Helper ────
+async function sendResendEmail(opts: {
+  to: string | string[];
+  subject: string;
+  html: string;
+  from?: string;
+  attachments?: Array<{ filename: string; content: string }>; // base64
+  replyTo?: string;
+}): Promise<{ success: boolean; id?: string; error?: string }> {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  if (!apiKey) return { success: false, error: "RESEND_API_KEY 미설정" };
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: opts.from || "더웰파트너 <onboarding@resend.dev>",
+        to: Array.isArray(opts.to) ? opts.to : [opts.to],
+        subject: opts.subject,
+        html: opts.html,
+        ...(opts.attachments ? { attachments: opts.attachments } : {}),
+        ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { success: false, error: data.message || "발송 실패" };
+    return { success: true, id: data.id };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
+
 // ──── Solapi SMS / 알림톡 통합 Helper ────
 async function solapiAuthHeader(): Promise<string> {
   const apiKey = Deno.env.get("SOLAPI_API_KEY") || "";
@@ -904,6 +940,191 @@ crudRoutes("attendance_records", "/erp/attendance");
 crudRoutes("billing_rates", "/erp/billing-rates");
 crudRoutes("partner_billings", "/erp/partner-billings");
 crudRoutes("settlements", "/erp/settlements");
+
+// ──── 이메일 발송 API ────
+app.post(`${BASE}/email/send`, async (c) => {
+  try {
+    const body = await c.req.json();
+    const { to, subject, html, attachments, replyTo, type, refId } = body;
+    if (!to || !subject || !html) return c.json(fail("필수 항목 누락 (to, subject, html)"), 400);
+
+    const result = await sendResendEmail({ to, subject, html, attachments, replyTo });
+
+    // 발송 로그 저장
+    const logId = db.generateId();
+    await db.save("email_logs", logId, {
+      id: logId,
+      to: Array.isArray(to) ? to.join(", ") : to,
+      subject,
+      type: type || "GENERAL", // INVOICE, PAYSLIP, GENERAL
+      ref_id: refId || null,
+      success: result.success,
+      message_id: result.id || null,
+      error: result.error || null,
+      sent_at: db.now(),
+    });
+
+    if (!result.success) return c.json(fail(`이메일 발송 실패: ${result.error}`), 500);
+    return c.json(ok({ id: result.id, logId }, "이메일이 발송되었습니다."));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
+
+// 발송 로그 조회
+crudRoutes("email_logs", "/admin/email-logs");
+
+// 청구서 자동 발송 (PDF base64 + 고객사 이메일)
+app.post(`${BASE}/email/send-invoice`, async (c) => {
+  try {
+    const { billingId, recipientEmail, pdfBase64, fileName, message } = await c.req.json();
+    const billing = await db.findById("partner_billings", billingId);
+    if (!billing) return c.json(fail("청구서를 찾을 수 없습니다."), 404);
+    const client = await db.findById("client_companies", billing.client_company_id);
+    if (!client) return c.json(fail("고객사 정보가 없습니다."), 404);
+
+    const settings = (await db.findById("system_settings", "main")) || {};
+    const companyName = settings.company_name || "주식회사 더웰파트너";
+
+    const html = `
+      <div style="font-family:'Pretendard',sans-serif;max-width:600px;margin:0 auto;padding:30px;color:#1a1a1a;">
+        <div style="background:#0F172A;color:#fff;padding:24px;border-radius:12px 12px 0 0;text-align:center;">
+          <h1 style="margin:0;font-size:22px;letter-spacing:2px;">${companyName}</h1>
+          <p style="margin:8px 0 0;font-size:13px;color:#94A3B8;">청구서 발송 안내</p>
+        </div>
+        <div style="background:#fff;border:1px solid #E2E8F0;border-top:none;padding:30px;border-radius:0 0 12px 12px;">
+          <p style="font-size:15px;margin:0 0 15px;"><strong>${client.name || client.company_name}</strong> 귀중</p>
+          <p style="font-size:14px;line-height:1.7;color:#475569;">
+            안녕하세요. ${companyName}입니다.<br/>
+            <strong>${billing.year_month}</strong> 도급/파견 용역에 대한 청구서를 첨부 파일로 송부드립니다.
+          </p>
+          <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:13px;">
+            <tr><td style="padding:10px;background:#F8FAFC;border:1px solid #E2E8F0;width:40%;">청구 기간</td><td style="padding:10px;border:1px solid #E2E8F0;">${billing.year_month}</td></tr>
+            <tr><td style="padding:10px;background:#F8FAFC;border:1px solid #E2E8F0;">공급가액</td><td style="padding:10px;border:1px solid #E2E8F0;">${(billing.total_amount || 0).toLocaleString()}원</td></tr>
+            <tr><td style="padding:10px;background:#F8FAFC;border:1px solid #E2E8F0;">부가세</td><td style="padding:10px;border:1px solid #E2E8F0;">${(billing.vat_amount || 0).toLocaleString()}원</td></tr>
+            <tr><td style="padding:10px;background:#F8FAFC;border:1px solid #E2E8F0;font-weight:700;">합계금액</td><td style="padding:10px;border:1px solid #E2E8F0;font-weight:700;color:#0284C7;">${(billing.final_amount || 0).toLocaleString()}원</td></tr>
+          </table>
+          ${message ? `<p style="font-size:13px;color:#64748B;background:#F8FAFC;padding:12px;border-left:3px solid #0284C7;">${message}</p>` : ""}
+          <p style="font-size:13px;color:#64748B;margin-top:20px;">
+            첨부된 PDF 파일을 확인하시고, 지급 기일 내 입금 부탁드립니다.<br/>
+            문의사항은 ${settings.phone || "1666-7663"} 으로 연락주세요.
+          </p>
+          <div style="margin-top:30px;padding-top:20px;border-top:1px solid #E2E8F0;font-size:11px;color:#94A3B8;text-align:center;">
+            ${companyName} | ${settings.address || "경기도 수원시 권선구 경수대로 371 2층"}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const result = await sendResendEmail({
+      to: recipientEmail,
+      subject: `[${companyName}] ${billing.year_month} 청구서`,
+      html,
+      attachments: pdfBase64 ? [{ filename: fileName || `청구서_${billing.year_month}.pdf`, content: pdfBase64 }] : undefined,
+    });
+
+    const logId = db.generateId();
+    await db.save("email_logs", logId, {
+      id: logId, to: recipientEmail, subject: `${billing.year_month} 청구서`,
+      type: "INVOICE", ref_id: billingId, success: result.success,
+      message_id: result.id || null, error: result.error || null, sent_at: db.now(),
+    });
+
+    if (!result.success) return c.json(fail(`발송 실패: ${result.error}`), 500);
+
+    // 청구서 상태 업데이트
+    await db.save("partner_billings", billingId, { ...billing, last_sent_at: db.now(), email_sent: true });
+
+    return c.json(ok({ id: result.id }, "청구서 이메일이 발송되었습니다."));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
+
+// 급여명세서 자동 발송
+app.post(`${BASE}/email/send-payslip`, async (c) => {
+  try {
+    const { employeeId, yearMonth, pdfBase64, fileName, message } = await c.req.json();
+    const employee = await db.findById("employees", employeeId);
+    if (!employee) return c.json(fail("직원 정보를 찾을 수 없습니다."), 404);
+    if (!employee.email) return c.json(fail("직원 이메일이 등록되지 않았습니다."), 400);
+
+    const settings = (await db.findById("system_settings", "main")) || {};
+    const companyName = settings.company_name || "주식회사 더웰파트너";
+
+    const html = `
+      <div style="font-family:'Pretendard',sans-serif;max-width:600px;margin:0 auto;padding:30px;color:#1a1a1a;">
+        <div style="background:#0F172A;color:#fff;padding:24px;border-radius:12px 12px 0 0;text-align:center;">
+          <h1 style="margin:0;font-size:22px;letter-spacing:2px;">${companyName}</h1>
+          <p style="margin:8px 0 0;font-size:13px;color:#94A3B8;">${yearMonth} 급여명세서</p>
+        </div>
+        <div style="background:#fff;border:1px solid #E2E8F0;border-top:none;padding:30px;border-radius:0 0 12px 12px;">
+          <p style="font-size:15px;margin:0 0 15px;"><strong>${employee.name}</strong>님 안녕하세요</p>
+          <p style="font-size:14px;line-height:1.7;color:#475569;">
+            ${yearMonth} 급여명세서를 첨부 파일로 송부드립니다.<br/>
+            첨부 PDF는 <strong>본인 생년월일 6자리(YYMMDD)</strong>로 비밀번호가 설정되어 있습니다.
+          </p>
+          ${message ? `<p style="font-size:13px;color:#64748B;background:#F8FAFC;padding:12px;border-left:3px solid #0284C7;">${message}</p>` : ""}
+          <p style="font-size:13px;color:#64748B;margin-top:20px;">
+            본 급여명세서는 근로기준법 제48조에 따라 발급되었습니다.<br/>
+            궁금하신 사항은 인사팀(${settings.phone || "1666-7663"}, ${settings.email || "2021thewell@gmail.com"})으로 문의해주세요.
+          </p>
+          <div style="margin-top:30px;padding-top:20px;border-top:1px solid #E2E8F0;font-size:11px;color:#94A3B8;text-align:center;">
+            ${companyName} | ${settings.address || ""}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const result = await sendResendEmail({
+      to: employee.email,
+      subject: `[${companyName}] ${yearMonth} 급여명세서`,
+      html,
+      attachments: pdfBase64 ? [{ filename: fileName || `${yearMonth}_급여명세서_${employee.name}.pdf`, content: pdfBase64 }] : undefined,
+    });
+
+    const logId = db.generateId();
+    await db.save("email_logs", logId, {
+      id: logId, to: employee.email, subject: `${yearMonth} 급여명세서`,
+      type: "PAYSLIP", ref_id: `${employeeId}_${yearMonth}`, success: result.success,
+      message_id: result.id || null, error: result.error || null, sent_at: db.now(),
+    });
+
+    if (!result.success) return c.json(fail(`발송 실패: ${result.error}`), 500);
+    return c.json(ok({ id: result.id }, "급여명세서가 발송되었습니다."));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
+
+// 일괄 급여명세서 발송
+app.post(`${BASE}/email/batch-send-payslips`, async (c) => {
+  try {
+    const { yearMonth, employees: empList } = await c.req.json();
+    if (!yearMonth || !Array.isArray(empList)) return c.json(fail("yearMonth, employees 필수"), 400);
+    const results: any[] = [];
+    for (const item of empList) {
+      const { employeeId, pdfBase64, fileName, message } = item;
+      const employee = await db.findById("employees", employeeId);
+      if (!employee || !employee.email) {
+        results.push({ employeeId, success: false, error: "이메일 미등록" });
+        continue;
+      }
+      const settings = (await db.findById("system_settings", "main")) || {};
+      const companyName = settings.company_name || "주식회사 더웰파트너";
+      const html = `<div style="font-family:'Pretendard',sans-serif;max-width:600px;margin:0 auto;padding:30px;"><h2>${employee.name}님 ${yearMonth} 급여명세서</h2><p>${message || "급여명세서를 송부드립니다. PDF 비밀번호는 생년월일 6자리입니다."}</p></div>`;
+      const result = await sendResendEmail({
+        to: employee.email,
+        subject: `[${companyName}] ${yearMonth} 급여명세서`,
+        html,
+        attachments: pdfBase64 ? [{ filename: fileName || `${yearMonth}_급여명세서_${employee.name}.pdf`, content: pdfBase64 }] : undefined,
+      });
+      const logId = db.generateId();
+      await db.save("email_logs", logId, {
+        id: logId, to: employee.email, subject: `${yearMonth} 급여명세서`,
+        type: "PAYSLIP", ref_id: `${employeeId}_${yearMonth}`,
+        success: result.success, message_id: result.id || null, error: result.error || null, sent_at: db.now(),
+      });
+      results.push({ employeeId, name: employee.name, success: result.success, error: result.error });
+    }
+    const successCount = results.filter((r) => r.success).length;
+    return c.json(ok({ total: results.length, successCount, failedCount: results.length - successCount, results }, "일괄 발송 완료"));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
 
 // 청구서 자동 생성 (월별 출퇴근 데이터 + 단가 → 청구서)
 app.post(`${BASE}/erp/partner-billings/generate`, async (c) => {

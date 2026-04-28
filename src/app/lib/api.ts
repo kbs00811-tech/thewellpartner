@@ -385,6 +385,19 @@ export const payroll = {
     apiFetch(`/admin/employees/${encodeURIComponent(employeeId)}/kakao`, { method: "PUT", body: JSON.stringify({ kakao_id: kakaoId }) }),
 };
 
+// ──── 이메일 발송 API ────
+export const emailApi = {
+  send: (data: { to: string | string[]; subject: string; html: string; attachments?: any[]; replyTo?: string; type?: string; refId?: string }) =>
+    apiFetch("/email/send", { method: "POST", body: JSON.stringify(data) }),
+  sendInvoice: (data: { billingId: string; recipientEmail: string; pdfBase64?: string; fileName?: string; message?: string }) =>
+    apiFetch("/email/send-invoice", { method: "POST", body: JSON.stringify(data) }),
+  sendPayslip: (data: { employeeId: string; yearMonth: string; pdfBase64?: string; fileName?: string; message?: string }) =>
+    apiFetch("/email/send-payslip", { method: "POST", body: JSON.stringify(data) }),
+  batchSendPayslips: (data: { yearMonth: string; employees: any[] }) =>
+    apiFetch("/email/batch-send-payslips", { method: "POST", body: JSON.stringify(data) }),
+  logs: createCrud("/admin/email-logs"),
+};
+
 // ──── Site Content ────
 export const siteContent = {
   get: (section: string) => apiFetch(`/admin/site-content/${encodeURIComponent(section)}`),
