@@ -901,6 +901,131 @@ crudRoutes("client_companies", "/erp/client-companies");
 crudRoutes("work_sites", "/erp/work-sites");
 crudRoutes("placements", "/erp/placements");
 crudRoutes("attendance_records", "/erp/attendance");
+crudRoutes("billing_rates", "/erp/billing-rates");
+crudRoutes("partner_billings", "/erp/partner-billings");
+crudRoutes("settlements", "/erp/settlements");
+
+// 청구서 자동 생성 (월별 출퇴근 데이터 + 단가 → 청구서)
+app.post(`${BASE}/erp/partner-billings/generate`, async (c) => {
+  try {
+    const { clientCompanyId, yearMonth } = await c.req.json();
+    if (!clientCompanyId || !yearMonth) return c.json(fail("필수 파라미터가 누락되었습니다."), 400);
+
+    // 해당 월 출퇴근 기록 집계
+    const attendances = await db.findAll("attendance_records");
+    const placements = await db.findAll("placements");
+    const billingRates = await db.findAll("billing_rates");
+    const employees = await db.findAll("employees");
+
+    // 해당 고객사 배치들
+    const clientPlacements = placements.filter((p: any) => p.client_company_id === clientCompanyId);
+    const placementIds = new Set(clientPlacements.map((p: any) => p.id));
+
+    // 해당 월 출퇴근 합산
+    let totalHours = 0;
+    let totalAmount = 0;
+    let totalWorkerCost = 0;
+    for (const att of attendances) {
+      if (!att.date || !att.date.startsWith(yearMonth)) continue;
+      const placement = clientPlacements.find((p: any) => p.id === att.placement_id);
+      if (!placement) continue;
+      const employee = employees.find((e: any) => e.id === placement.employee_id);
+      const jobCategory = employee?.job_category || placement.job_category || "기타";
+      const rate = billingRates.find((r: any) =>
+        r.client_company_id === clientCompanyId &&
+        r.job_category === jobCategory
+      );
+      const hours = Number(att.work_hours) || 8;
+      totalHours += hours;
+      totalAmount += hours * (Number(rate?.client_rate_per_hour) || 0);
+      totalWorkerCost += hours * (Number(rate?.worker_rate_per_hour) || 0);
+    }
+
+    const vatAmount = Math.round(totalAmount * 0.1);
+    const finalAmount = totalAmount + vatAmount;
+    const insuranceCost = Math.round(totalWorkerCost * 0.105); // 약 10.5% 사업주 4대보험
+    const netMargin = totalAmount - totalWorkerCost - insuranceCost;
+    const marginRate = totalAmount > 0 ? (netMargin / totalAmount) * 100 : 0;
+
+    // 청구서 저장
+    const billingId = db.generateId();
+    await db.save("partner_billings", billingId, {
+      id: billingId,
+      client_company_id: clientCompanyId,
+      year_month: yearMonth,
+      total_hours: totalHours,
+      total_amount: totalAmount,
+      vat_amount: vatAmount,
+      final_amount: finalAmount,
+      status: "DRAFT",
+      created_at: db.now(),
+    });
+
+    // 정산 저장
+    const settleId = db.generateId();
+    await db.save("settlements", settleId, {
+      id: settleId,
+      year_month: yearMonth,
+      client_company_id: clientCompanyId,
+      revenue: totalAmount,
+      worker_cost: totalWorkerCost,
+      insurance_cost: insuranceCost,
+      net_margin: netMargin,
+      margin_rate: marginRate,
+      created_at: db.now(),
+    });
+
+    return c.json(ok({ billingId, settleId, totalHours, totalAmount, finalAmount, netMargin, marginRate }, "청구서가 생성되었습니다."));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
+
+// 청구서 발행
+app.put(`${BASE}/erp/partner-billings/:id/issue`, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const item = await db.findById("partner_billings", id);
+    if (!item) return c.json(fail("청구서를 찾을 수 없습니다."), 404);
+    await db.save("partner_billings", id, { ...item, status: "ISSUED", issued_at: db.now() });
+    return c.json(ok(null, "발행되었습니다."));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
+
+// 청구서 입금 완료
+app.put(`${BASE}/erp/partner-billings/:id/paid`, async (c) => {
+  try {
+    const id = c.req.param("id");
+    const item = await db.findById("partner_billings", id);
+    if (!item) return c.json(fail("청구서를 찾을 수 없습니다."), 404);
+    await db.save("partner_billings", id, { ...item, status: "PAID", paid_at: db.now() });
+    return c.json(ok(null, "입금 완료 처리되었습니다."));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
+
+// 정산 요약 (월별)
+app.get(`${BASE}/erp/settlements/summary`, async (c) => {
+  try {
+    const yearMonth = c.req.query("yearMonth");
+    if (!yearMonth) return c.json(fail("yearMonth 파라미터가 필요합니다."), 400);
+    const all = await db.findAll("settlements");
+    const filtered = all.filter((s: any) => s.year_month === yearMonth);
+    const totalRevenue = filtered.reduce((sum: number, s: any) => sum + (s.revenue || 0), 0);
+    const totalWorkerCost = filtered.reduce((sum: number, s: any) => sum + (s.worker_cost || 0), 0);
+    const totalInsurance = filtered.reduce((sum: number, s: any) => sum + (s.insurance_cost || 0), 0);
+    const totalMargin = filtered.reduce((sum: number, s: any) => sum + (s.net_margin || 0), 0);
+    return c.json(ok({ yearMonth, totalRevenue, totalWorkerCost, totalInsurance, totalMargin, count: filtered.length, settlements: filtered }));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
+
+// 정산 by partner
+app.get(`${BASE}/erp/settlements/by-partner`, async (c) => {
+  try {
+    const clientCompanyId = c.req.query("clientCompanyId");
+    if (!clientCompanyId) return c.json(fail("clientCompanyId 파라미터가 필요합니다."), 400);
+    const all = await db.findAll("settlements");
+    const filtered = all.filter((s: any) => s.client_company_id === clientCompanyId);
+    return c.json(ok(filtered));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
 
 // ERP Dashboard summary
 app.get(`${BASE}/erp/dashboard`, async (c) => {

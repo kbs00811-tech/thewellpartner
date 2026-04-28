@@ -260,6 +260,28 @@ export const erpApi = {
   getForeignDashboard: () => apiFetch("/erp/foreign-dashboard"),
 };
 
+// ──── 정산 API (파트너사별 청구/마진 정산) ────
+export const settlementApi = {
+  // 단가 마스터 (파트너사 × 직무)
+  billingRates: createCrud("/erp/billing-rates"),
+  // 고객사 청구서 (월별)
+  partnerBillings: {
+    ...createCrud("/erp/partner-billings"),
+    generate: (data: { clientCompanyId: string; yearMonth: string }) =>
+      apiFetch("/erp/partner-billings/generate", { method: "POST", body: safeBody(data) }),
+    issue: (id: string) => apiFetch(`/erp/partner-billings/${encodeURIComponent(id)}/issue`, { method: "PUT" }),
+    markPaid: (id: string) => apiFetch(`/erp/partner-billings/${encodeURIComponent(id)}/paid`, { method: "PUT" }),
+  },
+  // 마진 정산 (회사 수익)
+  settlements: {
+    ...createCrud("/erp/settlements"),
+    summary: (yearMonth: string) =>
+      apiFetch(`/erp/settlements/summary?yearMonth=${encodeURIComponent(yearMonth)}`),
+    byPartner: (clientCompanyId: string) =>
+      apiFetch(`/erp/settlements/by-partner?clientCompanyId=${encodeURIComponent(clientCompanyId)}`),
+  },
+};
+
 // ──── Statistics API ────
 export const statistics = {
   recruit: () => apiFetch("/admin/statistics/recruit"),
