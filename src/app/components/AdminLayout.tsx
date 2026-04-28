@@ -77,6 +77,7 @@ const menuItems: MenuItem[] = [
       { name: "근태 관리", path: `${A}/erp/attendance`, icon: CalendarCheck },
       { name: "급여명세서", path: `${A}/payroll`, icon: FileSpreadsheet },
       { name: "정산 관리", path: `${A}/settlement`, icon: TrendingUp },
+      { name: "계약·청구 양식", path: `${A}/contract-docs`, icon: FileText },
     ],
   },
   {
