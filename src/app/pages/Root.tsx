@@ -10,10 +10,17 @@ import { Toaster } from "../components/ui/sonner";
 import { useEffect, Suspense } from "react";
 
 function ScrollToTop() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, [pathname]);
+    // GA4 SPA 페이지뷰 추적 (어드민 제외)
+    if (!pathname.startsWith("/manage-twp") && typeof (window as any).gtag === "function") {
+      (window as any).gtag("event", "page_view", {
+        page_path: pathname + search,
+        page_title: document.title,
+      });
+    }
+  }, [pathname, search]);
   return null;
 }
 

@@ -20,6 +20,23 @@
     <!-- 네이버 서치어드바이저 인증 -->
     <meta name="naver-site-verification" content="cc101720cf20cca701dbb14f83db967d6b0a24bf" />
 
+    <!-- Google Analytics 4 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-9K13NJWJ06"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      // 어드민 페이지는 추적 제외
+      if (!location.pathname.startsWith('/manage-twp')) {
+        gtag('config', 'G-9K13NJWJ06', {
+          send_page_view: true,
+          anonymize_ip: true
+        });
+      } else {
+        gtag('config', 'G-9K13NJWJ06', { send_page_view: false });
+      }
+    </script>
+
     <!-- Favicons -->
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
