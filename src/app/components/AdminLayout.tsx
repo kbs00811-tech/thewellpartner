@@ -288,6 +288,22 @@ export function AdminLayout() {
     api.getBadgeCounts().then((res: any) => setBadgeCounts(res)).catch(() => {});
   }, []);
 
+  // 모바일 사이드바 열림 시 body 스크롤 락
+  useEffect(() => {
+    if (mobileSidebarOpen) {
+      document.body.classList.add("sidebar-open");
+    } else {
+      document.body.classList.remove("sidebar-open");
+    }
+    return () => document.body.classList.remove("sidebar-open");
+  }, [mobileSidebarOpen]);
+
+  // 라우트 변경 시 모바일 사이드바 자동 닫힘
+  const location = useLocation();
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [location.pathname]);
+
   const itemsWithBadges = menuItems.map((item) => ({
     ...item,
     badge: item.badgeKey ? badgeCounts[item.badgeKey] || 0 : 0,

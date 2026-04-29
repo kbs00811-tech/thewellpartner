@@ -1,0 +1,138 @@
+/**
+ * 모바일 최적화 CSS
+ * - iOS 입력 줌 방지 (16px 이상)
+ * - 터치 타겟 최소 44x44px (Apple HIG)
+ * - 모바일 사이드바 스크롤 방지
+ * - 가로 스크롤 컨테이너 부드러운 스크롤
+ */
+
+/* iOS 자동 줌 방지 — input/select/textarea 16px 미만 시 자동 확대됨 */
+@media screen and (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* 폼 라벨/도움말은 작게 유지 */
+  .text-xs {
+    font-size: 0.75rem !important;
+  }
+  .text-sm {
+    font-size: 14px !important;
+  }
+}
+
+/* 모바일 터치 타겟 최소 크기 */
+@media (max-width: 768px) and (pointer: coarse) {
+  button,
+  a[role="button"],
+  [role="button"],
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-height: 40px;
+  }
+
+  /* 작은 아이콘 버튼은 패딩 자동 보정 */
+  button.icon-btn,
+  a.icon-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+/* 가로 스크롤 부드럽게 (iOS) */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+/* 모바일 모달 사이즈 */
+@media (max-width: 640px) {
+  /* max-w-md, max-w-lg 등이 모바일에서 화면 너비 사용 */
+  [class*="max-w-md"],
+  [class*="max-w-lg"],
+  [class*="max-w-xl"] {
+    max-width: calc(100vw - 2rem) !important;
+  }
+
+  /* 모달 padding 축소 */
+  .p-6,
+  .p-8 {
+    padding: 1rem !important;
+  }
+
+  /* 모바일에서 큰 그리드는 자동 단일 컬럼 */
+  .grid-cols-md-auto > * {
+    min-width: 0;
+  }
+}
+
+/* 사이드바 열려있을 때 본문 스크롤 방지 (iOS) */
+body.sidebar-open {
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+}
+
+/* 안전 영역 (iPhone X+ 노치) */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* 큰 테이블 모바일에서 카드 스타일로 변경 가능하게 */
+@media (max-width: 640px) {
+  .table-mobile-card thead {
+    display: none;
+  }
+  .table-mobile-card tr {
+    display: block;
+    margin-bottom: 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+  }
+  .table-mobile-card td {
+    display: flex;
+    justify-content: space-between;
+    border: none !important;
+    padding: 0.4rem 0 !important;
+    font-size: 13px;
+  }
+  .table-mobile-card td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #64748b;
+    margin-right: 1rem;
+  }
+}
+
+/* 키보드 활성 시 viewport 흔들림 방지 */
+html {
+  height: 100%;
+}
+
+/* 작은 화면 전용 숨김 */
+@media (max-width: 480px) {
+  .hide-xs {
+    display: none !important;
+  }
+}
+
+/* 어드민 페이지 모바일 padding 축소 */
+@media (max-width: 640px) {
+  main.flex-1 {
+    padding: 1rem !important;
+  }
+}
+
+/* 모바일에서 sticky 헤더 배경 강제 (스크롤 가독성) */
+@media (max-width: 768px) {
+  .sticky {
+    background-color: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(8px);
+  }
+}

@@ -383,12 +383,12 @@ export default function AdminContractDocs() {
       {/* 계약 형태 선택 */}
       <div className="mb-6">
         <label className="text-xs font-semibold text-gray-500 mb-2 block">계약 형태</label>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {(["PERSONAL_OUTSOURCING", "PRODUCTION_OUTSOURCING", "DISPATCH"] as ContractType[]).map((t) => (
             <button
               key={t}
               onClick={() => setContractType(t)}
-              className={`p-4 rounded-xl border-2 text-left transition-all ${
+              className={`p-4 rounded-xl border-2 text-left transition-all min-h-[60px] ${
                 contractType === t
                   ? "border-[var(--brand-blue)] bg-blue-50"
                   : "border-gray-200 bg-white hover:border-gray-300"
@@ -611,13 +611,13 @@ export default function AdminContractDocs() {
 
       {/* 미리보기 모달 */}
       {previewHTML && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setPreviewHTML(null)}>
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4 sticky top-0 bg-white pb-3 border-b">
-              <h3 className="text-lg font-bold text-[var(--brand-navy)]">미리보기</h3>
-              <button onClick={() => setPreviewHTML(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 sm:p-4" onClick={() => setPreviewHTML(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[95vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center px-4 py-3 bg-white border-b flex-shrink-0">
+              <h3 className="text-base sm:text-lg font-bold text-[var(--brand-navy)]">미리보기</h3>
+              <button onClick={() => setPreviewHTML(null)} className="text-gray-400 hover:text-gray-600 p-2 -m-2">✕</button>
             </div>
-            <div className="flex justify-center" dangerouslySetInnerHTML={{ __html: previewHTML }} />
+            <div className="overflow-auto p-2 sm:p-4 flex-1 flex justify-center" dangerouslySetInnerHTML={{ __html: previewHTML }} />
           </div>
         </div>
       )}

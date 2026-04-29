@@ -466,18 +466,18 @@ export default function AdminBillingImport() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <button onClick={handlePreview} className="flex items-center justify-center gap-2 py-3 rounded-xl border border-gray-200 text-sm font-semibold hover:bg-gray-50">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2">
+            <button onClick={handlePreview} className="flex items-center justify-center gap-2 py-3 rounded-xl border border-gray-200 text-sm font-semibold hover:bg-gray-50 min-h-[44px]">
               <Eye size={14} /> 미리보기
             </button>
-            <button onClick={handleDownloadPDF} disabled={generating} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-[var(--brand-blue)] text-white text-sm font-semibold disabled:opacity-50">
-              {generating ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />} PDF 다운로드
+            <button onClick={handleDownloadPDF} disabled={generating} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-[var(--brand-blue)] text-white text-sm font-semibold disabled:opacity-50 min-h-[44px]">
+              {generating ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />} PDF
             </button>
-            <button onClick={handleImportToSystem} disabled={generating} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-purple-600 text-white text-sm font-semibold disabled:opacity-50">
+            <button onClick={handleImportToSystem} disabled={generating} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-purple-600 text-white text-sm font-semibold disabled:opacity-50 min-h-[44px]">
               <FileSpreadsheet size={14} /> 시스템 등록
             </button>
-            <button onClick={() => setShowEmail(true)} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-green-600 text-white text-sm font-semibold">
-              <Mail size={14} /> 이메일 발송
+            <button onClick={() => setShowEmail(true)} className="flex items-center justify-center gap-2 py-3 rounded-xl bg-green-600 text-white text-sm font-semibold min-h-[44px]">
+              <Mail size={14} /> 이메일
             </button>
           </div>
         </div>
@@ -487,8 +487,8 @@ export default function AdminBillingImport() {
       {data && (
         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
           <div className="p-4 border-b border-gray-100 font-bold text-[var(--brand-navy)]">직원별 명세 ({data.employees.length}명)</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+          <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+            <table className="w-full text-xs min-w-[600px]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-3 py-2 text-left">번호</th>
@@ -524,13 +524,13 @@ export default function AdminBillingImport() {
 
       {/* 미리보기 모달 */}
       {previewHTML && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setPreviewHTML(null)}>
-          <div className="bg-white rounded-2xl max-w-[95vw] w-full max-h-[95vh] overflow-auto p-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-3 sticky top-0 bg-white pb-2 border-b">
-              <h3 className="text-lg font-bold">미리보기 (A4 가로)</h3>
-              <button onClick={() => setPreviewHTML(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2 sm:p-4" onClick={() => setPreviewHTML(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-[95vw] max-h-[95vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center px-4 py-3 bg-white border-b flex-shrink-0">
+              <h3 className="text-base sm:text-lg font-bold">미리보기 (A4 가로)</h3>
+              <button onClick={() => setPreviewHTML(null)} className="text-gray-400 hover:text-gray-600 p-2 -m-2">✕</button>
             </div>
-            <div className="overflow-auto" dangerouslySetInnerHTML={{ __html: previewHTML }} />
+            <div className="overflow-auto p-2 sm:p-4 flex-1" dangerouslySetInnerHTML={{ __html: previewHTML }} />
           </div>
         </div>
       )}

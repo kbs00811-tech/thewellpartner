@@ -146,8 +146,28 @@ export default function Home() {
         <div className="absolute top-[-15%] right-[-5%] w-[700px] h-[700px] rounded-full opacity-30 blur-[150px] pointer-events-none" style={{ background: "radial-gradient(circle, #7DD3FC, transparent 70%)" }} />
         <div className="absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] rounded-full opacity-20 blur-[120px] pointer-events-none" style={{ background: "radial-gradient(circle, #BAE6FD, transparent 70%)" }} />
 
-        <div className="relative w-full max-w-7xl mx-auto px-5 sm:px-8 py-32 md:py-0">
-          <div className="grid lg:grid-cols-2 gap-16 items-center min-h-screen lg:min-h-0 lg:py-32">
+        <div className="relative w-full max-w-7xl mx-auto px-5 sm:px-8 py-24 md:py-0">
+          <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center min-h-screen lg:min-h-0 lg:py-32">
+
+            {/* Mobile Hero Image (lg 이하 표시) */}
+            <div className="lg:hidden relative h-[240px] sm:h-[300px] rounded-2xl overflow-hidden shadow-xl shadow-[#0284C7]/15 mb-2">
+              <AnimatePresence mode="wait">
+                <motion.img
+                  key={`mob-img-${heroSlide}`}
+                  src={heroSlides[heroSlide].image}
+                  alt={heroSlides[heroSlide].tag}
+                  initial={{ opacity: 0, scale: 1.05 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.6 }}
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              </AnimatePresence>
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0F172A]/40 via-transparent to-transparent" />
+              <div className="absolute bottom-3 left-3 px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-sm text-xs font-semibold text-[#0F172A]">
+                {heroSlides[heroSlide].tag}
+              </div>
+            </div>
 
             {/* Left — Text (슬라이드별 텍스트) */}
             <AnimatePresence mode="wait">
