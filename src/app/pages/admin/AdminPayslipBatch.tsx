@@ -352,8 +352,11 @@ export default function AdminPayslipBatch() {
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-[var(--brand-navy)]">명세서 일괄 발행</h1>
-        <p className="text-sm text-gray-500 mt-1">엑셀 업로드 → 지급 시트 자동 인식 → 직원별 명세서 PDF/ZIP/이메일 발송</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-[var(--brand-navy)]">③ 명세서 발송</h1>
+        <p className="text-sm text-gray-500 mt-1">완성된 청구 엑셀을 업로드하면 직원별 급여명세서 PDF를 자동 생성하고 이메일로 일괄 발송합니다.</p>
+        <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs">
+          <span className="font-semibold">출근부 입력은 ①, 청구내역 분석은 ②에서</span>
+        </div>
       </div>
 
       {/* 업로드 영역 */}

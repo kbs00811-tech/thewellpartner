@@ -78,8 +78,9 @@ const menuItems: MenuItem[] = [
       { name: "급여명세서", path: `${A}/payroll`, icon: FileSpreadsheet },
       { name: "정산 관리", path: `${A}/settlement`, icon: TrendingUp },
       { name: "계약·청구 양식", path: `${A}/contract-docs`, icon: FileText },
-      { name: "PDF/Excel 자동 임포트", path: `${A}/billing-import`, icon: FileSpreadsheet },
-      { name: "명세서 일괄 발행", path: `${A}/payslip-batch`, icon: FileCheck },
+      { name: "① 출근부 업로드 (PDF→근태)", path: `${A}/attendance-import`, icon: ClipboardList },
+      { name: "② 청구내역 업로드 (Excel)", path: `${A}/billing-import`, icon: FileSpreadsheet },
+      { name: "③ 명세서 발송", path: `${A}/payslip-batch`, icon: FileCheck },
     ],
   },
   {

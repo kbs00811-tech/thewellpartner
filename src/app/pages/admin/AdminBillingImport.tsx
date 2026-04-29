@@ -373,8 +373,11 @@ export default function AdminBillingImport() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-[var(--brand-navy)]">급여청구 PDF / Excel 자동 임포트</h1>
-        <p className="text-sm text-gray-500 mt-1">PDF 출근부 또는 Excel 청구서를 드래그하여 자동 분석 → PDF 발행 / 시스템 등록 / 이메일 발송</p>
+        <h1 className="text-2xl font-bold text-[var(--brand-navy)]">② 청구내역 업로드 (Excel)</h1>
+        <p className="text-sm text-gray-500 mt-1">근태가 입력된 청구 엑셀을 업로드하면 직원별 청구내역을 자동 분석합니다. PDF 발행 / 시스템 등록 / 이메일 발송 가능.</p>
+        <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs">
+          <span className="font-semibold">출근부 입력은 ①에서</span> · 명세서 발송은 ③에서
+        </div>
       </div>
 
       {/* PDF 임포트 옵션 */}
