@@ -41,6 +41,7 @@ const AdminPayroll = lazy(() => import("./pages/admin/AdminPayroll"));
 const AdminSettlement = lazy(() => import("./pages/admin/AdminSettlement"));
 const AdminContractDocs = lazy(() => import("./pages/admin/AdminContractDocs"));
 const AdminBillingImport = lazy(() => import("./pages/admin/AdminBillingImport"));
+const AdminPayslipBatch = lazy(() => import("./pages/admin/AdminPayslipBatch"));
 
 export const router = createBrowserRouter([
   {
@@ -103,6 +104,7 @@ export const router = createBrowserRouter([
       { path: "settlement", Component: AdminSettlement },
       { path: "contract-docs", Component: AdminContractDocs },
       { path: "billing-import", Component: AdminBillingImport },
+      { path: "payslip-batch", Component: AdminPayslipBatch },
     ],
   },
 ]);

@@ -144,6 +144,14 @@ export interface TaxInvoiceData {
   receiptType: "영수" | "청구";   // 영수 / 청구
 }
 
+// 직원별 명세서 데이터 묶음 (엑셀 → 명세서 일괄 발행용)
+export interface EmployeePayslipBatch {
+  yearMonth: string;
+  clientCompanyName: string;
+  payDate: string;
+  payslips: PayslipData[];
+}
+
 // 인적 도급 청구내역서 (엘티와이 형식 — 직원별 상세 표)
 export interface DetailedBillingData {
   contractType: ContractType;

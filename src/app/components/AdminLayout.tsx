@@ -79,6 +79,7 @@ const menuItems: MenuItem[] = [
       { name: "정산 관리", path: `${A}/settlement`, icon: TrendingUp },
       { name: "계약·청구 양식", path: `${A}/contract-docs`, icon: FileText },
       { name: "PDF/Excel 자동 임포트", path: `${A}/billing-import`, icon: FileSpreadsheet },
+      { name: "명세서 일괄 발행", path: `${A}/payslip-batch`, icon: FileCheck },
     ],
   },
   {
