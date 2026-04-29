@@ -42,6 +42,7 @@ const AdminSettlement = lazy(() => import("./pages/admin/AdminSettlement"));
 const AdminContractDocs = lazy(() => import("./pages/admin/AdminContractDocs"));
 const AdminBillingImport = lazy(() => import("./pages/admin/AdminBillingImport"));
 const AdminAttendanceImport = lazy(() => import("./pages/admin/AdminAttendanceImport"));
+const AdminDataCleanup = lazy(() => import("./pages/admin/AdminDataCleanup"));
 const AdminPayslipBatch = lazy(() => import("./pages/admin/AdminPayslipBatch"));
 
 export const router = createBrowserRouter([
@@ -106,6 +107,7 @@ export const router = createBrowserRouter([
       { path: "contract-docs", Component: AdminContractDocs },
       { path: "billing-import", Component: AdminBillingImport },
       { path: "attendance-import", Component: AdminAttendanceImport },
+      { path: "data-cleanup", Component: AdminDataCleanup },
       { path: "payslip-batch", Component: AdminPayslipBatch },
     ],
   },

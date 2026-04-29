@@ -100,6 +100,7 @@ const menuItems: MenuItem[] = [
     ],
   },
   { name: "시스템 설정", path: `${A}/settings`, icon: Settings, permKey: "settings" },
+  { name: "데이터 정리", path: `${A}/data-cleanup`, icon: Database, permKey: "settings" },
 ];
 
 function SidebarItem({ item, collapsed }: { item: MenuItem; collapsed: boolean }) {

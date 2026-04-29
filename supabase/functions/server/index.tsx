@@ -219,6 +219,81 @@ app.use(`${BASE}/storage/*`, async (c: any, next: any) => {
 
 // ──── Health & Seed ────
 app.get(`${BASE}/health`, (c) => c.json(ok({ status: "ok" })));
+
+// ──── 더미 데이터 정리 API (관리자 전용) ────
+const DEMO_DATA_TABLES = [
+  "site_banners", "notices", "faqs", "materials",
+  "job_posts", "job_applications", "applicants",
+  "inquiries", "inquiry_memos",
+  "employees", "departments", "positions",
+  "client_companies", "work_sites", "placements",
+  "attendance_records", "payroll_documents",
+  "issued_documents", "document_templates",
+  "billing_rates", "partner_billings", "settlements",
+  "visas", "stay_records",
+  "verification_requests", "audit_logs", "email_logs",
+];
+
+const PRESERVE_KEYS = {
+  admin_users: ["admin-1"],   // admin 계정 유지
+  admin_roles: ["SUPER_ADMIN", "ADMIN", "VIEWER"],
+  system_settings: ["main"],  // 시스템 설정 유지
+};
+
+// 데이터 카운트 조회
+app.get(`${BASE}/admin/data-stats`, async (c) => {
+  try {
+    const stats: Record<string, number> = {};
+    for (const table of DEMO_DATA_TABLES) {
+      try {
+        const items = await db.findAll(table);
+        stats[table] = items.length;
+      } catch { stats[table] = 0; }
+    }
+    return c.json(ok({ stats }));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
+
+// 더미 데이터 일괄 삭제 (관리자 전용)
+app.post(`${BASE}/admin/cleanup-demo`, async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const tables: string[] = body.tables || DEMO_DATA_TABLES;
+    const dryRun = body.dryRun !== false; // 기본 dry-run
+
+    const result: Record<string, { count: number; deleted: string[] }> = {};
+    for (const table of tables) {
+      if (!DEMO_DATA_TABLES.includes(table)) continue; // 화이트리스트 검증
+      try {
+        const items = await db.findAll(table);
+        const preserveIds = (PRESERVE_KEYS as any)[table] || [];
+        const toDelete = items.filter((i: any) => !preserveIds.includes(i.id));
+        result[table] = { count: toDelete.length, deleted: [] };
+        if (!dryRun) {
+          for (const item of toDelete) {
+            await db.remove(table, item.id);
+            result[table].deleted.push(item.id);
+          }
+        }
+      } catch { result[table] = { count: 0, deleted: [] }; }
+    }
+
+    // 감사 로그
+    if (!dryRun) {
+      const logId = db.generateId();
+      const totalDeleted = Object.values(result).reduce((s, r) => s + r.deleted.length, 0);
+      const user = c.get("adminUser");
+      await db.save("audit_logs", logId, {
+        id: logId, admin_id: user?.id || "unknown", admin_name: user?.name || "관리자",
+        action: "더미 데이터 정리", details: `${tables.length}개 테이블 / ${totalDeleted}건 삭제`,
+        ip: c.req.header("x-forwarded-for") || "unknown", status: "SUCCESS", created_at: db.now(),
+      });
+    }
+
+    return c.json(ok({ dryRun, result, totalTables: tables.length },
+      dryRun ? "Dry-run 완료 (실제 삭제 안 됨)" : "더미 데이터 정리 완료"));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
 // Seed는 관리자 인증 필요 (데이터 초기화 방지)
 app.get(`${BASE}/seed`, async (c) => {
   try {

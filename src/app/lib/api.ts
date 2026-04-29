@@ -385,6 +385,13 @@ export const payroll = {
     apiFetch(`/admin/employees/${encodeURIComponent(employeeId)}/kakao`, { method: "PUT", body: JSON.stringify({ kakao_id: kakaoId }) }),
 };
 
+// ──── 데이터 정리 API ────
+export const dataCleanupApi = {
+  getStats: () => apiFetch("/admin/data-stats"),
+  cleanup: (data: { tables?: string[]; dryRun?: boolean }) =>
+    apiFetch("/admin/cleanup-demo", { method: "POST", body: JSON.stringify(data) }),
+};
+
 // ──── 이메일 발송 API ────
 export const emailApi = {
   send: (data: { to: string | string[]; subject: string; html: string; attachments?: any[]; replyTo?: string; type?: string; refId?: string }) =>
