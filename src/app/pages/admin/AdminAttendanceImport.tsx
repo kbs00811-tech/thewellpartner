@@ -31,10 +31,21 @@ type EmployeeAttendance = Record<string, Record<number, AttendanceSlot>>;
 // PDF 파싱 (브라우저용 pdfjs-dist 사용)
 async function parsePDF(file: File): Promise<EmployeeAttendance> {
   const pdfjsLib: any = await import("pdfjs-dist");
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+  // worker 비활성화 (메인 스레드에서 처리, Vite 번들 충돌 방지)
+  if (pdfjsLib.GlobalWorkerOptions) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+  }
 
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, isEvalSupported: false, useWorker: false }).promise;
+  const loadingTask = pdfjsLib.getDocument({
+    data: arrayBuffer,
+    isEvalSupported: false,
+    useSystemFonts: true,
+    disableFontFace: true,
+    disableWorker: true,
+  });
+  const pdf = await loadingTask.promise;
+  console.log(`[PDF 파싱] 페이지 수: ${pdf.numPages}`);
 
   const result: EmployeeAttendance = {};
 
@@ -182,16 +193,31 @@ async function fillExcel(excelFile: File, pdfData: EmployeeAttendance, year: num
     return sheet[addr]?.v;
   };
 
-  // 직원 행 찾기 (A열 "{이름}기본" 또는 D열 이름)
+  // 직원 행 찾기 (다중 패턴 지원)
+  const range = XLSX.utils.decode_range(sheet["!ref"] || "A1:A1");
+  const maxRow = range.e.r + 1;
+  console.log(`[근태 시트] ${sheetName}, 행 수: ${maxRow}`);
+
   const findEmployeeRow = (name: string): number | null => {
-    const range = XLSX.utils.decode_range(sheet["!ref"] || "A1:A1");
-    for (let r = 1; r <= range.e.r + 1; r++) {
+    // 패턴 1: A열에 "{이름}기본"
+    for (let r = 1; r <= maxRow; r++) {
       const v = getCell(r, 1);
       if (typeof v === "string" && v.replace(/\s/g, "") === `${name}기본`) return r;
     }
-    for (let r = 1; r <= range.e.r + 1; r++) {
-      const v = getCell(r, 4);
-      if (typeof v === "string" && v.trim() === name) return r;
+    // 패턴 2: A~F열 어디든 이름 정확히 일치
+    for (let r = 1; r <= maxRow; r++) {
+      for (let c = 1; c <= 6; c++) {
+        const v = getCell(r, c);
+        if (typeof v === "string" && v.trim() === name) return r;
+      }
+    }
+    // 패턴 3: A열에 이름이 포함된 셀 (예: "이미란기본", "이미란연장")
+    for (let r = 1; r <= maxRow; r++) {
+      const v = getCell(r, 1);
+      if (typeof v === "string" && v.replace(/\s/g, "").startsWith(name)) {
+        // 첫 발견이 "{이름}기본"이 아니어도 그 위치를 시작점으로
+        return r;
+      }
     }
     return null;
   };
@@ -201,7 +227,12 @@ async function fillExcel(excelFile: File, pdfData: EmployeeAttendance, year: num
 
   for (const [name, days] of Object.entries(pdfData)) {
     const startRow = findEmployeeRow(name);
-    if (!startRow) { missing.push(name); continue; }
+    if (!startRow) {
+      console.warn(`[매칭 실패] ${name} - 근태 시트에서 행을 못 찾음`);
+      missing.push(name);
+      continue;
+    }
+    console.log(`[매칭] ${name} → row ${startRow}`);
     const catRow: Record<string, number> = {
       기본: startRow, 연장: startRow + 1, 심야: startRow + 2,
       특근: startRow + 3, 특잔: startRow + 4, 지각조퇴: startRow + 5,
@@ -270,16 +301,19 @@ export default function AdminAttendanceImport() {
     try {
       const ym = extractYM(file.name);
       if (ym) { setYear(ym.y); setMonth(ym.m); }
+      console.log("[PDF 처리 시작]", file.name, file.size, "bytes");
       const data = await parsePDF(file);
       const empCount = Object.keys(data).length;
+      console.log("[PDF 파싱 결과]", empCount, "명", Object.keys(data));
       if (empCount === 0) {
-        handleError(new Error("PDF에서 직원 데이터를 추출하지 못했습니다."));
+        handleError(new Error("PDF에서 직원 데이터를 추출하지 못했습니다. 콘솔(F12)에서 상세 로그를 확인하세요."));
         return;
       }
       setPdfData(data);
       handleSuccess(`PDF 파싱 완료: ${empCount}명 인식`);
     } catch (e: any) {
-      handleError(e, { fallback: "PDF 처리 실패" });
+      console.error("[PDF 파싱 에러]", e);
+      handleError(e, { fallback: `PDF 처리 실패: ${e?.message || "알 수 없는 오류"}` });
     } finally { setParsing(false); }
   };
 
@@ -290,7 +324,15 @@ export default function AdminAttendanceImport() {
     }
     setGenerating(true);
     try {
+      console.log("[엑셀 처리 시작]", excelFile.name, "| 직원 수:", Object.keys(pdfData).length, "| 연월:", year, month);
       const { blob, stats, missing } = await fillExcel(excelFile, pdfData, year, month);
+      console.log("[엑셀 처리 결과]", { stats, missing, blobSize: blob.size });
+
+      if (Object.keys(stats).length === 0 && missing.length > 0) {
+        handleError(new Error(`근태 시트에서 직원 행을 찾을 수 없습니다 (${missing.length}명 매칭 실패). 시트 구조를 확인해주세요. 콘솔(F12) 참조.`));
+        return;
+      }
+
       const fileName = excelFile.name.replace(/\.xlsx$/i, "_근태자동입력완료.xlsx");
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -300,11 +342,13 @@ export default function AdminAttendanceImport() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+
       const inputCount = Object.keys(stats).length;
       const totalCells = Object.values(stats).reduce((s, v) => s + v, 0);
-      handleSuccess(`${inputCount}명 / ${totalCells}개 셀 입력 완료${missing.length ? ` (매칭 실패: ${missing.length}명)` : ""}`);
+      handleSuccess(`다운로드 시작! ${inputCount}명 / ${totalCells}개 셀 입력 완료${missing.length ? ` (매칭 실패: ${missing.length}명)` : ""}`);
     } catch (e: any) {
-      handleError(e, { fallback: "엑셀 처리 실패" });
+      console.error("[엑셀 처리 에러]", e);
+      handleError(e, { fallback: `엑셀 처리 실패: ${e?.message || "알 수 없는 오류"}` });
     } finally { setGenerating(false); }
   };
 
