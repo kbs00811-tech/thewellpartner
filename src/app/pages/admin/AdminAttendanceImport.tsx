@@ -322,6 +322,12 @@ export default function AdminAttendanceImport() {
   const [excelDrag, setExcelDrag] = useState(false);
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [statusLog, setStatusLog] = useState<string[]>([]);
+
+  const addStatus = (msg: string) => {
+    console.log(msg);
+    setStatusLog((prev) => [...prev, `${new Date().toLocaleTimeString()} ${msg}`]);
+  };
 
   // 파일명에서 년월 추출
   const extractYM = (name: string) => {
@@ -368,28 +374,36 @@ export default function AdminAttendanceImport() {
   };
 
   const handleProcess = async () => {
-    if (!pdfData || !excelFile) {
-      handleError(new Error("PDF와 엑셀 파일을 모두 업로드해주세요."));
+    if (!excelFile) {
+      handleError(new Error("엑셀 파일을 업로드해주세요."));
       return;
     }
+    setStatusLog([]);
     setGenerating(true);
     try {
-      console.log("[엑셀 처리 시작]", excelFile.name, "| 직원 수:", Object.keys(pdfData).length, "| 연월:", year, month);
-      const { blob, stats, missing } = await fillExcel(excelFile, pdfData, year, month);
+      // PDF 데이터가 없으면 빈 데이터로라도 진행
+      const dataToUse = pdfData || {};
+      addStatus(`[1/3] 처리 시작: 엑셀=${excelFile.name}, PDF 직원=${Object.keys(dataToUse).length}명, ${year}-${month}`);
+      addStatus(`[2/3] 엑셀 처리 중...`);
+      const { blob, stats, missing } = await fillExcel(excelFile, dataToUse, year, month);
+      addStatus(`[3/3] 엑셀 생성 완료: ${blob.size} bytes, 입력 ${Object.keys(stats).length}명, 매칭 실패 ${missing.length}명`);
       console.log("[엑셀 처리 결과]", { stats, missing, blobSize: blob.size });
 
       const fileName = excelFile.name.replace(/\.xlsx$/i, "_근태자동입력완료.xlsx");
       const inputCount = Object.keys(stats).length;
       const totalCells = Object.values(stats).reduce((s, v) => s + v, 0);
 
-      // 매칭 0명이어도 강제 다운로드 (사용자가 시트 구조 직접 확인 가능)
+      // 강제 다운로드 (매칭 결과와 무관)
+      addStatus(`다운로드 트리거: ${fileName}`);
       downloadBlob(blob, fileName);
+      addStatus(`✓ 다운로드 완료`);
 
-      if (inputCount === 0 && missing.length > 0) {
+      if (inputCount === 0) {
         handleError(new Error(
-          `다운로드는 됐지만 근태 입력 0건. 엑셀 직원명과 PDF 직원명이 일치하지 않습니다. ` +
-          `매칭 실패: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` 외 ${missing.length - 5}명` : ""}. ` +
-          `엑셀 근태 시트에서 직원 이름이 어디에 있는지 확인해주세요. (콘솔 F12 참조)`
+          `다운로드는 시작됐지만 근태 입력 0건. ` +
+          (missing.length > 0
+            ? `매칭 실패: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` 외 ${missing.length - 5}명` : ""}.`
+            : `PDF 인식이 안 되었습니다.`)
         ));
       } else {
         handleSuccess(`✓ 다운로드 완료! ${inputCount}명 / ${totalCells}개 셀 입력${missing.length ? ` (매칭 실패: ${missing.length}명)` : ""}`);
@@ -528,11 +542,11 @@ export default function AdminAttendanceImport() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <button
           onClick={handleProcess}
-          disabled={!pdfData || !excelFile || generating}
+          disabled={!excelFile || generating}
           className="sm:col-span-2 flex items-center justify-center gap-2 py-4 rounded-xl bg-[var(--brand-blue)] text-white font-semibold text-base disabled:opacity-50 min-h-[52px]"
         >
           {generating ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
-          근태 자동 입력 + 다운로드
+          {pdfData ? "근태 자동 입력 + 다운로드" : "엑셀만 다운로드 (PDF 없이)"}
         </button>
         <button
           onClick={handleInspectExcel}
@@ -543,6 +557,16 @@ export default function AdminAttendanceImport() {
           🔍 엑셀 구조 진단
         </button>
       </div>
+
+      {/* 진행 상태 로그 (실시간) */}
+      {statusLog.length > 0 && (
+        <div className="mt-4 bg-gray-900 text-green-400 rounded-xl p-4 font-mono text-xs max-h-48 overflow-auto">
+          <div className="text-white font-semibold mb-2">📋 진행 로그</div>
+          {statusLog.map((line, i) => (
+            <div key={i} className="break-all">{line}</div>
+          ))}
+        </div>
+      )}
 
       {/* PDF 결과 미리보기 */}
       {pdfData && (
