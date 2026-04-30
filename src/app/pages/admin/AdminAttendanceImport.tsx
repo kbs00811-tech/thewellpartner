@@ -31,10 +31,17 @@ type EmployeeAttendance = Record<string, Record<number, AttendanceSlot>>;
 // PDF 파싱 (브라우저용 pdfjs-dist 사용)
 async function parsePDF(file: File): Promise<EmployeeAttendance> {
   const pdfjsLib: any = await import("pdfjs-dist");
-  // CDN 워커 설정 (Vercel/Netlify 양쪽 호환)
   const version = pdfjsLib.version || "4.0.379";
+
+  // 워커 비활성화 (CDN 버전 호환 문제 회피, 메인 스레드에서 처리)
   if (pdfjsLib.GlobalWorkerOptions) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.mjs`;
+    // Blob URL로 빈 워커 생성 — fake worker 강제 사용
+    try {
+      const blob = new Blob(["self.onmessage=()=>{}"], { type: "application/javascript" });
+      pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+    } catch {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+    }
   }
 
   const arrayBuffer = await file.arrayBuffer();
@@ -45,6 +52,7 @@ async function parsePDF(file: File): Promise<EmployeeAttendance> {
     isEvalSupported: false,
     useSystemFonts: true,
     disableFontFace: true,
+    disableWorker: true,  // 메인 스레드 처리 강제
   });
   const pdf = await loadingTask.promise;
   console.log(`[PDF 파싱] 페이지 수: ${pdf.numPages}`);
@@ -195,30 +203,39 @@ async function fillExcel(excelFile: File, pdfData: EmployeeAttendance, year: num
     return sheet[addr]?.v;
   };
 
-  // 직원 행 찾기 (다중 패턴 지원)
+  // 직원 행 찾기 (엘티와이 양식: A열=이름, B열="{이름}기본/연장/...", F열=구분)
   const range = XLSX.utils.decode_range(sheet["!ref"] || "A1:A1");
   const maxRow = range.e.r + 1;
   console.log(`[근태 시트] ${sheetName}, 행 수: ${maxRow}`);
 
   const findEmployeeRow = (name: string): number | null => {
-    // 패턴 1: A열에 "{이름}기본"
+    // 패턴 1: B열(2)에 "{이름}기본" — 엘티와이 표준
+    for (let r = 1; r <= maxRow; r++) {
+      const v = getCell(r, 2);
+      if (typeof v === "string" && v.replace(/\s/g, "") === `${name}기본`) return r;
+    }
+    // 패턴 2: A열에 "{이름}기본"
     for (let r = 1; r <= maxRow; r++) {
       const v = getCell(r, 1);
       if (typeof v === "string" && v.replace(/\s/g, "") === `${name}기본`) return r;
     }
-    // 패턴 2: A~F열 어디든 이름 정확히 일치
+    // 패턴 3: A열에 이름 + F열에 "기본"
+    for (let r = 1; r <= maxRow; r++) {
+      const aVal = getCell(r, 1);
+      const fVal = getCell(r, 6);
+      if (typeof aVal === "string" && aVal.trim() === name &&
+          typeof fVal === "string" && fVal.trim() === "기본") return r;
+    }
+    // 패턴 4: A열에 이름만
+    for (let r = 1; r <= maxRow; r++) {
+      const v = getCell(r, 1);
+      if (typeof v === "string" && v.trim() === name) return r;
+    }
+    // 패턴 5: 어떤 열이든 이름과 정확 일치
     for (let r = 1; r <= maxRow; r++) {
       for (let c = 1; c <= 6; c++) {
         const v = getCell(r, c);
         if (typeof v === "string" && v.trim() === name) return r;
-      }
-    }
-    // 패턴 3: A열에 이름이 포함된 셀 (예: "이미란기본", "이미란연장")
-    for (let r = 1; r <= maxRow; r++) {
-      const v = getCell(r, 1);
-      if (typeof v === "string" && v.replace(/\s/g, "").startsWith(name)) {
-        // 첫 발견이 "{이름}기본"이 아니어도 그 위치를 시작점으로
-        return r;
       }
     }
     return null;
@@ -239,6 +256,25 @@ async function fillExcel(excelFile: File, pdfData: EmployeeAttendance, year: num
       기본: startRow, 연장: startRow + 1, 심야: startRow + 2,
       특근: startRow + 3, 특잔: startRow + 4, 지각조퇴: startRow + 5,
     };
+    // 일자 컬럼 자동 감지: 헤더 행에서 1, 2, 3... 또는 날짜 형식 찾기
+    // 엘티와이 양식: 헤더 R5 또는 R6에 1~31일 표시
+    let dayStartCol = 8; // 기본값: H열 (구분 다음)
+    // 헤더 검색
+    for (let r = 1; r <= 8; r++) {
+      for (let c = 5; c <= 12; c++) {
+        const v = getCell(r, c);
+        if (typeof v === "number" && v === 1) {
+          // 다음 컬럼이 2면 일자 시작
+          const next = getCell(r, c + 1);
+          if (typeof next === "number" && next === 2) {
+            dayStartCol = c;
+            console.log(`[일자 컬럼] ${dayStartCol}열부터 (헤더 행 ${r})`);
+            r = 999; break;
+          }
+        }
+      }
+    }
+
     let count = 0;
     for (let day = 1; day <= 31; day++) {
       const slot = days[day];
@@ -248,7 +284,7 @@ async function fillExcel(excelFile: File, pdfData: EmployeeAttendance, year: num
         if (!val) continue;
         const r = catRow[cat];
         if (!r) continue;
-        const c = 6 + day;
+        const c = (dayStartCol - 1) + day; // dayStartCol이 1일이므로 +day-1
         const addr = XLSX.utils.encode_cell({ r: r - 1, c: c - 1 });
         sheet[addr] = { t: "n", v: val };
         count++;
