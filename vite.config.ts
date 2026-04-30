@@ -15,6 +15,7 @@ export default defineConfig({
   },
   assetsInclude: ['**/*.svg', '**/*.csv'],
   build: {
+    target: "esnext",  // top-level await 지원 (pdfjs-dist v4)
     rollupOptions: {
       output: {
         manualChunks: {
@@ -28,5 +29,8 @@ export default defineConfig({
       },
     },
     chunkSizeWarningLimit: 600,
+  },
+  optimizeDeps: {
+    esbuildOptions: { target: "esnext" },
   },
 })
