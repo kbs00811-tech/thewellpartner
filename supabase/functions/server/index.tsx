@@ -295,10 +295,19 @@ app.post(`${BASE}/admin/cleanup-demo`, async (c) => {
   } catch (e: any) { return c.json(fail(e.message), 500); }
 });
 // Seed는 관리자 인증 필요 (데이터 초기화 방지)
+// 운영 환경에서 force=true는 ALLOW_FORCE_SEED 환경변수 있을 때만 허용
 app.get(`${BASE}/seed`, async (c) => {
   try {
     const force = c.req.query("force") === "true";
-    if (force) {
+    const allowForce = Deno.env.get("ALLOW_FORCE_SEED") === "true";
+    if (force && !allowForce) {
+      // 운영 환경 — admin이 이미 있으면 force 무시
+      const existingAdmins = await db.findAll("admin_users");
+      if (existingAdmins.length > 0) {
+        return c.json(fail("운영 환경에서는 강제 초기화가 차단되었습니다. 환경변수 ALLOW_FORCE_SEED=true 설정 후 시도하세요.", "FORCE_SEED_BLOCKED"), 403);
+      }
+    }
+    if (force && allowForce) {
       const roles = await db.findAll("admin_roles");
       for (const r of roles) await db.remove("admin_roles", r.id);
       const users = await db.findAll("admin_users");

@@ -170,18 +170,21 @@ export default function AdminLogin() {
               {loading ? <Loader2 size={18} className="animate-spin" /> : <>로그인<ArrowRight size={18} /></>}
             </button>
           </form>
-          <div className="mt-4 p-3 rounded-xl bg-gray-50 text-xs text-gray-400">
-            <div className="font-semibold text-gray-500 mb-1">데모 환경</div>
-            <div className="mb-2">초기 계정: <span className="font-mono text-gray-600">admin</span> / <span className="font-mono text-gray-600">admin1234</span></div>
-            <button
-              type="button"
-              onClick={handleSeedManual}
-              disabled={loading}
-              className="text-blue-500 hover:text-blue-700 font-medium underline underline-offset-2 disabled:opacity-50"
-            >
-              시드 데이터 강제 초기화
-            </button>
-          </div>
+          {/* 개발 환경(localhost)에서만 표시 - 운영 환경 보안을 위해 숨김 */}
+          {(typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) && (
+            <div className="mt-4 p-3 rounded-xl bg-gray-50 text-xs text-gray-400">
+              <div className="font-semibold text-gray-500 mb-1">개발 환경 전용</div>
+              <div className="mb-2">초기 계정: <span className="font-mono text-gray-600">admin</span> / <span className="font-mono text-gray-600">admin1234</span></div>
+              <button
+                type="button"
+                onClick={handleSeedManual}
+                disabled={loading}
+                className="text-blue-500 hover:text-blue-700 font-medium underline underline-offset-2 disabled:opacity-50"
+              >
+                시드 데이터 강제 초기화
+              </button>
+            </div>
+          )}
         </div>
         <p className="text-center text-xs text-gray-400 mt-6">&copy; 2025 더웰파트너. Admin System v1.0</p>
       </div>
