@@ -31,18 +31,20 @@ type EmployeeAttendance = Record<string, Record<number, AttendanceSlot>>;
 // PDF 파싱 (브라우저용 pdfjs-dist 사용)
 async function parsePDF(file: File): Promise<EmployeeAttendance> {
   const pdfjsLib: any = await import("pdfjs-dist");
-  // worker 비활성화 (메인 스레드에서 처리, Vite 번들 충돌 방지)
+  // CDN 워커 설정 (Vercel/Netlify 양쪽 호환)
+  const version = pdfjsLib.version || "4.0.379";
   if (pdfjsLib.GlobalWorkerOptions) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.mjs`;
   }
 
   const arrayBuffer = await file.arrayBuffer();
+  console.log(`[PDF 로딩] ${file.name} (${arrayBuffer.byteLength} bytes), pdfjs v${version}`);
+
   const loadingTask = pdfjsLib.getDocument({
     data: arrayBuffer,
     isEvalSupported: false,
     useSystemFonts: true,
     disableFontFace: true,
-    disableWorker: true,
   });
   const pdf = await loadingTask.promise;
   console.log(`[PDF 파싱] 페이지 수: ${pdf.numPages}`);
@@ -317,6 +319,17 @@ export default function AdminAttendanceImport() {
     } finally { setParsing(false); }
   };
 
+  const downloadBlob = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleProcess = async () => {
     if (!pdfData || !excelFile) {
       handleError(new Error("PDF와 엑셀 파일을 모두 업로드해주세요."));
@@ -328,28 +341,50 @@ export default function AdminAttendanceImport() {
       const { blob, stats, missing } = await fillExcel(excelFile, pdfData, year, month);
       console.log("[엑셀 처리 결과]", { stats, missing, blobSize: blob.size });
 
-      if (Object.keys(stats).length === 0 && missing.length > 0) {
-        handleError(new Error(`근태 시트에서 직원 행을 찾을 수 없습니다 (${missing.length}명 매칭 실패). 시트 구조를 확인해주세요. 콘솔(F12) 참조.`));
-        return;
-      }
-
       const fileName = excelFile.name.replace(/\.xlsx$/i, "_근태자동입력완료.xlsx");
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
       const inputCount = Object.keys(stats).length;
       const totalCells = Object.values(stats).reduce((s, v) => s + v, 0);
-      handleSuccess(`다운로드 시작! ${inputCount}명 / ${totalCells}개 셀 입력 완료${missing.length ? ` (매칭 실패: ${missing.length}명)` : ""}`);
+
+      // 매칭 0명이어도 강제 다운로드 (사용자가 시트 구조 직접 확인 가능)
+      downloadBlob(blob, fileName);
+
+      if (inputCount === 0 && missing.length > 0) {
+        handleError(new Error(
+          `다운로드는 됐지만 근태 입력 0건. 엑셀 직원명과 PDF 직원명이 일치하지 않습니다. ` +
+          `매칭 실패: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` 외 ${missing.length - 5}명` : ""}. ` +
+          `엑셀 근태 시트에서 직원 이름이 어디에 있는지 확인해주세요. (콘솔 F12 참조)`
+        ));
+      } else {
+        handleSuccess(`✓ 다운로드 완료! ${inputCount}명 / ${totalCells}개 셀 입력${missing.length ? ` (매칭 실패: ${missing.length}명)` : ""}`);
+      }
     } catch (e: any) {
       console.error("[엑셀 처리 에러]", e);
       handleError(e, { fallback: `엑셀 처리 실패: ${e?.message || "알 수 없는 오류"}` });
     } finally { setGenerating(false); }
+  };
+
+  // 디버그: 엑셀 시트 구조 보기 (매칭 실패 진단용)
+  const handleInspectExcel = async () => {
+    if (!excelFile) return;
+    try {
+      const buffer = await excelFile.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const sheetName = wb.SheetNames.find((n) => /근태/.test(n));
+      if (!sheetName) { handleError(new Error("'근태' 시트 없음")); return; }
+      const sheet = wb.Sheets[sheetName];
+      const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+
+      // A~F열의 처음 30행 출력
+      console.log(`[엑셀 진단] 시트: ${sheetName}, 총 ${data.length}행`);
+      console.log("[엑셀 진단] 처음 30행 (A~F열):");
+      for (let r = 0; r < Math.min(30, data.length); r++) {
+        const row = (data[r] || []).slice(0, 6);
+        console.log(`  R${r + 1}:`, row.map(v => v === "" ? "_" : String(v).slice(0, 15)).join(" | "));
+      }
+      handleSuccess("엑셀 구조를 콘솔(F12)에서 확인하세요");
+    } catch (e: any) {
+      handleError(e, { fallback: "엑셀 진단 실패" });
+    }
   };
 
   const onPdfDrop = useCallback((e: React.DragEvent) => {
@@ -453,14 +488,24 @@ export default function AdminAttendanceImport() {
       )}
 
       {/* 실행 버튼 */}
-      <button
-        onClick={handleProcess}
-        disabled={!pdfData || !excelFile || generating}
-        className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-[var(--brand-blue)] text-white font-semibold text-base disabled:opacity-50 min-h-[52px]"
-      >
-        {generating ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
-        근태 자동 입력 + 다운로드
-      </button>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <button
+          onClick={handleProcess}
+          disabled={!pdfData || !excelFile || generating}
+          className="sm:col-span-2 flex items-center justify-center gap-2 py-4 rounded-xl bg-[var(--brand-blue)] text-white font-semibold text-base disabled:opacity-50 min-h-[52px]"
+        >
+          {generating ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
+          근태 자동 입력 + 다운로드
+        </button>
+        <button
+          onClick={handleInspectExcel}
+          disabled={!excelFile}
+          className="flex items-center justify-center gap-2 py-4 rounded-xl border border-gray-200 text-sm font-semibold disabled:opacity-50 hover:bg-gray-50 min-h-[52px]"
+          title="엑셀 시트 구조를 콘솔에 출력"
+        >
+          🔍 엑셀 구조 진단
+        </button>
+      </div>
 
       {/* PDF 결과 미리보기 */}
       {pdfData && (
