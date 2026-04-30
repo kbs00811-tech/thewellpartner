@@ -28,19 +28,21 @@ interface AttendanceSlot {
 }
 type EmployeeAttendance = Record<string, Record<number, AttendanceSlot>>;
 
-// PDF 파싱 (브라우저용 pdfjs-dist 사용)
+// PDF 파싱 (브라우저용 pdfjs-dist 사용 - Vite worker import 방식)
 async function parsePDF(file: File): Promise<EmployeeAttendance> {
   const pdfjsLib: any = await import("pdfjs-dist");
   const version = pdfjsLib.version || "4.0.379";
 
-  // 워커 비활성화 (CDN 버전 호환 문제 회피, 메인 스레드에서 처리)
-  if (pdfjsLib.GlobalWorkerOptions) {
-    // Blob URL로 빈 워커 생성 — fake worker 강제 사용
+  // Vite의 ?url import로 워커 파일 경로 가져오기 (번들에 포함됨)
+  if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
     try {
-      const blob = new Blob(["self.onmessage=()=>{}"], { type: "application/javascript" });
-      pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
-    } catch {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+      const workerModule = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerModule.default;
+      console.log("[PDF Worker] 로컬 번들 워커 사용:", workerModule.default);
+    } catch (e) {
+      console.warn("[PDF Worker] 로컬 워커 로드 실패, CDN 폴백:", e);
+      // 폴백: jsdelivr CDN (cdnjs보다 안정적)
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
     }
   }
 
@@ -52,7 +54,6 @@ async function parsePDF(file: File): Promise<EmployeeAttendance> {
     isEvalSupported: false,
     useSystemFonts: true,
     disableFontFace: true,
-    disableWorker: true,  // 메인 스레드 처리 강제
   });
   const pdf = await loadingTask.promise;
   console.log(`[PDF 파싱] 페이지 수: ${pdf.numPages}`);
