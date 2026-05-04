@@ -333,6 +333,152 @@ export const storage = {
   deleteFile: (id: string) => apiFetch(`/storage/files/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
+// ──── 근태 자동 입력 API (Python FastAPI 백엔드) ────
+const ATTENDANCE_API_URL = import.meta.env.VITE_ATTENDANCE_API_URL || "https://thewellpartner-api.onrender.com";
+
+export interface AttendanceProcessResult {
+  pdf_meta: {
+    year: number | null;
+    month: number | null;
+    total_employees: number;
+    raw_pages: number;
+  };
+  attendance: {
+    filled_employees: number;
+    total_cells: number;
+    missing: string[];
+  };
+  leave: {
+    filled_employees: number;
+    missing: string[];
+  };
+  validation: Record<string, any>;
+  validation_ok: boolean;
+  review_count: number;
+}
+
+export const attendanceApi = {
+  /**
+   * PDF + Excel → 근태/연차 자동 입력 후 결과 엑셀 다운로드.
+   * 응답: { blob, filename, summary }
+   */
+  process: async (params: {
+    pdf: File;
+    excel: File;
+    year: number;
+    month: number;
+    holidays?: string;
+    standardHours?: number;
+    normalStart?: string;
+    normalEnd?: string;
+    sheetName?: string;
+    leaveSheetName?: string;
+    overwriteExisting?: boolean;
+  }): Promise<{ blob: Blob; filename: string; summary: AttendanceProcessResult }> => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append("pdf", params.pdf);
+    formData.append("excel", params.excel);
+    formData.append("year", String(params.year));
+    formData.append("month", String(params.month));
+    formData.append("holidays", params.holidays || "");
+    formData.append("standard_hours", String(params.standardHours ?? 209));
+    formData.append("normal_start", params.normalStart || "08:30");
+    formData.append("normal_end", params.normalEnd || "17:30");
+    if (params.sheetName) formData.append("sheet_name", params.sheetName);
+    formData.append("leave_sheet_name", params.leaveSheetName || "연차내역");
+    formData.append("overwrite_existing", String(params.overwriteExisting ?? false));
+
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(`${ATTENDANCE_API_URL}/api/attendance/process`, {
+        method: "POST",
+        headers: {
+          ...(token ? { "X-Admin-Token": token } : {}),
+        },
+        body: formData,
+        timeout: 120_000, // 2분 (콜드 스타트 + 처리시간)
+      });
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        throw new ApiError("처리 시간이 초과되었습니다. 서버가 깨어나는 중일 수 있어요. 잠시 후 다시 시도해주세요.", 0, "TIMEOUT");
+      }
+      throw new ApiError("처리 서버에 연결할 수 없습니다.", 0, "NETWORK");
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new ApiError(err.detail || `처리 실패 (${res.status})`, res.status, "PROCESS_ERROR");
+    }
+
+    // 헤더에서 결과 요약 디코딩 (hex → utf-8 JSON)
+    let summary: AttendanceProcessResult;
+    const summaryHex = res.headers.get("X-Process-Result") || "";
+    try {
+      const bytes = new Uint8Array(summaryHex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+      summary = JSON.parse(new TextDecoder("utf-8").decode(bytes));
+    } catch {
+      summary = {
+        pdf_meta: { year: null, month: null, total_employees: 0, raw_pages: 0 },
+        attendance: { filled_employees: 0, total_cells: 0, missing: [] },
+        leave: { filled_employees: 0, missing: [] },
+        validation: {},
+        validation_ok: false,
+        review_count: 0,
+      };
+    }
+
+    // 파일명 추출 (Content-Disposition)
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const fnMatch = disposition.match(/filename="?([^"]+)"?/);
+    const filename = fnMatch
+      ? decodeURIComponent(fnMatch[1])
+      : params.excel.name.replace(".xlsx", "_근태연차자동입력완료.xlsx");
+
+    const blob = await res.blob();
+    return { blob, filename, summary };
+  },
+
+  /**
+   * PDF만 미리보기 (엑셀 처리 X)
+   */
+  preview: async (pdf: File) => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append("pdf", pdf);
+
+    const res = await fetchWithTimeout(`${ATTENDANCE_API_URL}/api/attendance/preview`, {
+      method: "POST",
+      headers: {
+        ...(token ? { "X-Admin-Token": token } : {}),
+      },
+      body: formData,
+      timeout: 60_000,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new ApiError(err.detail || `미리보기 실패 (${res.status})`, res.status, "PREVIEW_ERROR");
+    }
+    return res.json();
+  },
+
+  /**
+   * 백엔드 헬스체크 (콜드 스타트 미리 깨우기)
+   */
+  ping: async (): Promise<boolean> => {
+    try {
+      const res = await fetchWithTimeout(`${ATTENDANCE_API_URL}/health`, {
+        method: "GET",
+        timeout: 60_000,
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+};
+
 // ──── Admin Roles CRUD ────
 export const adminRoles = createCrud("/admin/roles");
 

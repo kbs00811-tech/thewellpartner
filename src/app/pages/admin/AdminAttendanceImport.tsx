@@ -1,601 +1,425 @@
 /**
- * 출근부 업로드 (PDF → 근태)
+ * 출근부 자동 입력 (PDF → 근태/연차)
  *
- * 단일 책임:
- *   PDF 출근부를 받아서 근태 시트가 채워진 새 엑셀 파일을 다운로드
- *
- * 흐름:
- *   1. PDF 출근부 + 청구 엑셀 업로드 (드래그앤드롭)
- *   2. PDF 자동 파싱 (텍스트 PDF)
- *   3. 청구 엑셀의 "근태 ( N월 )" 시트에 자동 입력
- *   4. 새 파일로 다운로드 (원본 보존)
+ * Python FastAPI 백엔드(openpyxl 기반)로 처리하여 수식/서식 100% 보존.
+ * 백엔드: backend-api/ (Render Free Tier 배포)
  */
-import { useState, useRef, useCallback } from "react";
-import { Upload, FileText, FileSpreadsheet, Download, Loader2, CheckCircle2, AlertCircle, ArrowRight } from "lucide-react";
-import * as XLSX from "xlsx";
+import { useState, useRef, useCallback, useEffect } from "react";
+import {
+  Upload, FileText, FileSpreadsheet, Download, Loader2,
+  CheckCircle2, AlertCircle, ArrowRight, Wifi, WifiOff,
+} from "lucide-react";
+import { attendanceApi, AttendanceProcessResult } from "../../lib/api";
 import { handleError, handleSuccess } from "../../lib/error-handler";
 
-const TIME_RE = /^\d{1,2}:\d{2}$/;
-const NUM_RE = /^\d+(\.\d+)?$/;
-const SPECIAL_NOTES = ["연차", "반차", "반반", "퇴사", "(연차)", "(반차)", "(반반)"];
-const KOREAN_RE = /^[가-힣]{1,4}$/;
-
-interface AttendanceSlot {
-  start: string;
-  end: string;
-  ot: string;
-  note: string;
-}
-type EmployeeAttendance = Record<string, Record<number, AttendanceSlot>>;
-
-// PDF 파싱 (브라우저용 pdfjs-dist 사용 - Vite worker import 방식)
-async function parsePDF(file: File): Promise<EmployeeAttendance> {
-  const pdfjsLib: any = await import("pdfjs-dist");
-  const version = pdfjsLib.version || "4.0.379";
-
-  // Vite의 ?url import로 워커 파일 경로 가져오기 (번들에 포함됨)
-  if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-    try {
-      const workerModule = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
-      pdfjsLib.GlobalWorkerOptions.workerSrc = workerModule.default;
-      console.log("[PDF Worker] 로컬 번들 워커 사용:", workerModule.default);
-    } catch (e) {
-      console.warn("[PDF Worker] 로컬 워커 로드 실패, CDN 폴백:", e);
-      // 폴백: jsdelivr CDN (cdnjs보다 안정적)
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
-    }
-  }
-
-  const arrayBuffer = await file.arrayBuffer();
-  console.log(`[PDF 로딩] ${file.name} (${arrayBuffer.byteLength} bytes), pdfjs v${version}`);
-
-  const loadingTask = pdfjsLib.getDocument({
-    data: arrayBuffer,
-    isEvalSupported: false,
-    useSystemFonts: true,
-    disableFontFace: true,
-  });
-  const pdf = await loadingTask.promise;
-  console.log(`[PDF 파싱] 페이지 수: ${pdf.numPages}`);
-
-  const result: EmployeeAttendance = {};
-
-  for (let p = 1; p <= pdf.numPages; p++) {
-    const page = await pdf.getPage(p);
-    const content = await page.getTextContent();
-    const items: any[] = content.items;
-
-    // y 좌표로 행 그룹화
-    const rows: { y: number; tokens: { x: number; xEnd: number; text: string }[] }[] = [];
-    for (const it of items) {
-      const text = (it.str || "").trim();
-      if (!text) continue;
-      const x = it.transform[4];
-      const xEnd = x + (it.width || 0);
-      const y = Math.round(it.transform[5]);
-      const existing = rows.find((r) => Math.abs(r.y - y) < 3);
-      if (existing) existing.tokens.push({ x, xEnd, text });
-      else rows.push({ y, tokens: [{ x, xEnd, text }] });
-    }
-    rows.sort((a, b) => b.y - a.y);
-    for (const row of rows) row.tokens.sort((a, b) => a.x - b.x);
-
-    // 직원명 행 찾기
-    const nameTokens: { name: string; xCenter: number }[] = [];
-    for (const row of rows.slice(0, 8)) {
-      const found: { name: string; xCenter: number }[] = [];
-      let i = 0;
-      while (i < row.tokens.length) {
-        // 두 토큰 결합 시도 ("이 미란")
-        if (i + 1 < row.tokens.length) {
-          const combined = (row.tokens[i].text + row.tokens[i + 1].text).replace(/\s/g, "");
-          if (KOREAN_RE.test(combined) && combined.length >= 2) {
-            found.push({ name: combined, xCenter: (row.tokens[i].x + row.tokens[i + 1].xEnd) / 2 });
-            i += 2;
-            continue;
-          }
-        }
-        const single = row.tokens[i].text.replace(/\s/g, "");
-        if (KOREAN_RE.test(single) && single.length >= 2) {
-          found.push({ name: single, xCenter: (row.tokens[i].x + row.tokens[i].xEnd) / 2 });
-        }
-        i++;
-      }
-      if (found.length >= 2) {
-        nameTokens.push(...found);
-        break;
-      }
-    }
-
-    if (nameTokens.length === 0) continue;
-    for (const { name } of nameTokens) {
-      if (!result[name]) {
-        result[name] = {};
-        for (let d = 1; d <= 31; d++) result[name][d] = { start: "", end: "", ot: "", note: "" };
-      }
-    }
-
-    // 컬럼 폭 추정
-    const colWidth = nameTokens.length >= 2 ? Math.abs(nameTokens[1].xCenter - nameTokens[0].xCenter) : 100;
-
-    // 일자 행 처리
-    for (const row of rows) {
-      if (!row.tokens.length) continue;
-      const firstText = row.tokens[0].text.trim();
-      const day = parseInt(firstText);
-      if (isNaN(day) || day < 1 || day > 31) continue;
-
-      // 데이터 토큰 (요일 제외)
-      const dataTokens = row.tokens.slice(1).filter((t) => !["일", "월", "화", "수", "목", "금", "토"].includes(t.text));
-
-      for (const { name, xCenter } of nameTokens) {
-        const half = colWidth / 2;
-        const inRange = dataTokens.filter((t) => {
-          const tCenter = (t.x + t.xEnd) / 2;
-          return tCenter >= xCenter - half && tCenter < xCenter + half;
-        });
-        if (!inRange.length) continue;
-        inRange.sort((a, b) => a.x - b.x);
-
-        const slot = result[name][day];
-        for (const tok of inRange) {
-          const text = tok.text.trim();
-          if (SPECIAL_NOTES.includes(text)) {
-            slot.note = text.replace(/[()]/g, "");
-          } else if (TIME_RE.test(text)) {
-            if (!slot.start) slot.start = text;
-            else if (!slot.end) slot.end = text;
-          } else if (NUM_RE.test(text)) {
-            slot.ot = text;
-          }
-        }
-      }
-    }
-  }
-
-  return result;
-}
-
-function getDow(year: number, month: number, day: number): string {
-  const d = new Date(year, month - 1, day);
-  return ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
-}
-
-function classifyAttendance(slot: AttendanceSlot, year: number, month: number, day: number) {
-  const result = { 기본: 0, 연장: 0, 심야: 0, 특근: 0, 특잔: 0, 지각조퇴: 0 };
-  const { start, end, ot, note } = slot;
-  if (!start && !end && !note) return result;
-  if (note === "연차" || note === "퇴사") return result;
-  const isWeekend = ["토", "일"].includes(getDow(year, month, day));
-  const otNum = parseFloat(ot) || 0;
-
-  if (isWeekend) {
-    if (end === "17:30") result.특근 = 8;
-    else if (end === "15:30") result.특근 = 6;
-    else if (end === "12:30") result.특근 = 4;
-    else if (start) result.특근 = 8;
-    if (otNum) result.특잔 = otNum;
-  } else {
-    if (note === "반차") result.기본 = 4;
-    else if (note === "반반") result.기본 = 6;
-    else if (start === "13:30") result.기본 = 4;
-    else if (start === "10:30") result.기본 = 6;
-    else if (end === "12:30") result.기본 = 4;
-    else if (end === "15:30") result.기본 = 6;
-    else if (start) result.기본 = 8;
-    if (otNum) result.연장 = otNum;
-  }
-  return result;
-}
-
-// 엑셀 입력 (xlsx 라이브러리 사용)
-async function fillExcel(excelFile: File, pdfData: EmployeeAttendance, year: number, month: number): Promise<{ blob: Blob; stats: Record<string, number>; missing: string[] }> {
-  const buffer = await excelFile.arrayBuffer();
-  const wb = XLSX.read(buffer, { type: "array", cellStyles: true, cellDates: false });
-
-  // 근태 시트 찾기
-  const sheetName = wb.SheetNames.find((n) => /근태/.test(n));
-  if (!sheetName) throw new Error("'근태' 시트를 찾을 수 없습니다.");
-  const sheet = wb.Sheets[sheetName];
-
-  // 헬퍼: cell 주소 → 값 가져오기
-  const getCell = (r: number, c: number) => {
-    const addr = XLSX.utils.encode_cell({ r: r - 1, c: c - 1 });
-    return sheet[addr]?.v;
-  };
-
-  // 직원 행 찾기 (엘티와이 양식: A열=이름, B열="{이름}기본/연장/...", F열=구분)
-  const range = XLSX.utils.decode_range(sheet["!ref"] || "A1:A1");
-  const maxRow = range.e.r + 1;
-  console.log(`[근태 시트] ${sheetName}, 행 수: ${maxRow}`);
-
-  const findEmployeeRow = (name: string): number | null => {
-    // 패턴 1: B열(2)에 "{이름}기본" — 엘티와이 표준
-    for (let r = 1; r <= maxRow; r++) {
-      const v = getCell(r, 2);
-      if (typeof v === "string" && v.replace(/\s/g, "") === `${name}기본`) return r;
-    }
-    // 패턴 2: A열에 "{이름}기본"
-    for (let r = 1; r <= maxRow; r++) {
-      const v = getCell(r, 1);
-      if (typeof v === "string" && v.replace(/\s/g, "") === `${name}기본`) return r;
-    }
-    // 패턴 3: A열에 이름 + F열에 "기본"
-    for (let r = 1; r <= maxRow; r++) {
-      const aVal = getCell(r, 1);
-      const fVal = getCell(r, 6);
-      if (typeof aVal === "string" && aVal.trim() === name &&
-          typeof fVal === "string" && fVal.trim() === "기본") return r;
-    }
-    // 패턴 4: A열에 이름만
-    for (let r = 1; r <= maxRow; r++) {
-      const v = getCell(r, 1);
-      if (typeof v === "string" && v.trim() === name) return r;
-    }
-    // 패턴 5: 어떤 열이든 이름과 정확 일치
-    for (let r = 1; r <= maxRow; r++) {
-      for (let c = 1; c <= 6; c++) {
-        const v = getCell(r, c);
-        if (typeof v === "string" && v.trim() === name) return r;
-      }
-    }
-    return null;
-  };
-
-  const stats: Record<string, number> = {};
-  const missing: string[] = [];
-
-  for (const [name, days] of Object.entries(pdfData)) {
-    const startRow = findEmployeeRow(name);
-    if (!startRow) {
-      console.warn(`[매칭 실패] ${name} - 근태 시트에서 행을 못 찾음`);
-      missing.push(name);
-      continue;
-    }
-    console.log(`[매칭] ${name} → row ${startRow}`);
-    const catRow: Record<string, number> = {
-      기본: startRow, 연장: startRow + 1, 심야: startRow + 2,
-      특근: startRow + 3, 특잔: startRow + 4, 지각조퇴: startRow + 5,
-    };
-    // 일자 컬럼 자동 감지: 헤더 행에서 1, 2, 3... 또는 날짜 형식 찾기
-    // 엘티와이 양식: 헤더 R5 또는 R6에 1~31일 표시
-    let dayStartCol = 8; // 기본값: H열 (구분 다음)
-    // 헤더 검색
-    for (let r = 1; r <= 8; r++) {
-      for (let c = 5; c <= 12; c++) {
-        const v = getCell(r, c);
-        if (typeof v === "number" && v === 1) {
-          // 다음 컬럼이 2면 일자 시작
-          const next = getCell(r, c + 1);
-          if (typeof next === "number" && next === 2) {
-            dayStartCol = c;
-            console.log(`[일자 컬럼] ${dayStartCol}열부터 (헤더 행 ${r})`);
-            r = 999; break;
-          }
-        }
-      }
-    }
-
-    let count = 0;
-    for (let day = 1; day <= 31; day++) {
-      const slot = days[day];
-      if (!slot) continue;
-      const classified = classifyAttendance(slot, year, month, day);
-      for (const [cat, val] of Object.entries(classified)) {
-        if (!val) continue;
-        const r = catRow[cat];
-        if (!r) continue;
-        const c = (dayStartCol - 1) + day; // dayStartCol이 1일이므로 +day-1
-        const addr = XLSX.utils.encode_cell({ r: r - 1, c: c - 1 });
-        sheet[addr] = { t: "n", v: val };
-        count++;
-      }
-    }
-    stats[name] = count;
-  }
-
-  // 범위 갱신
-  const allKeys = Object.keys(sheet).filter((k) => !k.startsWith("!"));
-  if (allKeys.length > 0) {
-    const decoded = allKeys.map((k) => XLSX.utils.decode_cell(k));
-    const maxR = Math.max(...decoded.map((d) => d.r));
-    const maxC = Math.max(...decoded.map((d) => d.c));
-    sheet["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxR, c: maxC } });
-  }
-
-  const out = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
-  return {
-    blob: new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-    stats, missing
-  };
-}
+const today = new Date();
 
 export default function AdminAttendanceImport() {
-  const pdfRef = useRef<HTMLInputElement>(null);
-  const excelRef = useRef<HTMLInputElement>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [excelFile, setExcelFile] = useState<File | null>(null);
-  const [pdfData, setPdfData] = useState<EmployeeAttendance | null>(null);
-  const [parsing, setParsing] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [pdfDrag, setPdfDrag] = useState(false);
-  const [excelDrag, setExcelDrag] = useState(false);
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [month, setMonth] = useState(new Date().getMonth() + 1);
-  const [statusLog, setStatusLog] = useState<string[]>([]);
+  const [processing, setProcessing] = useState(false);
+  const [result, setResult] = useState<AttendanceProcessResult | null>(null);
+  const [resultBlob, setResultBlob] = useState<{ blob: Blob; filename: string } | null>(null);
+  const [progress, setProgress] = useState<string[]>([]);
+  const [serverAlive, setServerAlive] = useState<boolean | null>(null);
+  const [pinging, setPinging] = useState(false);
 
-  const addStatus = (msg: string) => {
-    console.log(msg);
-    setStatusLog((prev) => [...prev, `${new Date().toLocaleTimeString()} ${msg}`]);
-  };
+  // 설정
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth() + 1);
+  const [holidays, setHolidays] = useState("");
+  const [standardHours, setStandardHours] = useState(209);
+  const [normalStart, setNormalStart] = useState("08:30");
+  const [normalEnd, setNormalEnd] = useState("17:30");
+  const [sheetName, setSheetName] = useState("");
+  const [overwriteExisting, setOverwriteExisting] = useState(false);
 
-  // 파일명에서 년월 추출
-  const extractYM = (name: string) => {
-    const m1 = name.match(/(\d{2})\.(\d{2})\s*월/);
-    if (m1) return { y: 2000 + parseInt(m1[1]), m: parseInt(m1[2]) };
-    const m2 = name.match(/(\d{4})\s*년\s*(\d{1,2})\s*월/);
-    if (m2) return { y: parseInt(m2[1]), m: parseInt(m2[2]) };
-    const m3 = name.match(/_(\d{1,2})\s*월/);
-    if (m3) return { y: new Date().getFullYear(), m: parseInt(m3[1]) };
-    return null;
-  };
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
-  const handlePdf = async (file: File) => {
+  // 페이지 진입 시 서버 ping (콜드 스타트 미리 깨우기)
+  useEffect(() => {
+    setPinging(true);
+    attendanceApi.ping().then((ok) => {
+      setServerAlive(ok);
+      setPinging(false);
+    });
+  }, []);
+
+  const log = useCallback((msg: string) => {
+    setProgress((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+  }, []);
+
+  const handlePdfSelect = (file: File) => {
+    if (!file.name.endsWith(".pdf")) {
+      handleError(new Error("PDF 파일만 업로드 가능합니다."));
+      return;
+    }
     setPdfFile(file);
-    setParsing(true);
-    try {
-      const ym = extractYM(file.name);
-      if (ym) { setYear(ym.y); setMonth(ym.m); }
-      console.log("[PDF 처리 시작]", file.name, file.size, "bytes");
-      const data = await parsePDF(file);
-      const empCount = Object.keys(data).length;
-      console.log("[PDF 파싱 결과]", empCount, "명", Object.keys(data));
-      if (empCount === 0) {
-        handleError(new Error("PDF에서 직원 데이터를 추출하지 못했습니다. 콘솔(F12)에서 상세 로그를 확인하세요."));
-        return;
-      }
-      setPdfData(data);
-      handleSuccess(`PDF 파싱 완료: ${empCount}명 인식`);
-    } catch (e: any) {
-      console.error("[PDF 파싱 에러]", e);
-      handleError(e, { fallback: `PDF 처리 실패: ${e?.message || "알 수 없는 오류"}` });
-    } finally { setParsing(false); }
   };
 
-  const downloadBlob = (blob: Blob, fileName: string) => {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const handleExcelSelect = (file: File) => {
+    if (!file.name.endsWith(".xlsx")) {
+      handleError(new Error("xlsx 파일만 업로드 가능합니다."));
+      return;
+    }
+    setExcelFile(file);
   };
 
   const handleProcess = async () => {
-    if (!excelFile) {
-      handleError(new Error("엑셀 파일을 업로드해주세요."));
+    if (!pdfFile || !excelFile) {
+      handleError(new Error("PDF와 Excel 파일을 모두 업로드하세요."));
       return;
     }
-    setStatusLog([]);
-    setGenerating(true);
+
+    setProcessing(true);
+    setProgress([]);
+    setResult(null);
+    setResultBlob(null);
+
     try {
-      // PDF 데이터가 없으면 빈 데이터로라도 진행
-      const dataToUse = pdfData || {};
-      addStatus(`[1/3] 처리 시작: 엑셀=${excelFile.name}, PDF 직원=${Object.keys(dataToUse).length}명, ${year}-${month}`);
-      addStatus(`[2/3] 엑셀 처리 중...`);
-      const { blob, stats, missing } = await fillExcel(excelFile, dataToUse, year, month);
-      addStatus(`[3/3] 엑셀 생성 완료: ${blob.size} bytes, 입력 ${Object.keys(stats).length}명, 매칭 실패 ${missing.length}명`);
-      console.log("[엑셀 처리 결과]", { stats, missing, blobSize: blob.size });
-
-      const fileName = excelFile.name.replace(/\.xlsx$/i, "_근태자동입력완료.xlsx");
-      const inputCount = Object.keys(stats).length;
-      const totalCells = Object.values(stats).reduce((s, v) => s + v, 0);
-
-      // 강제 다운로드 (매칭 결과와 무관)
-      addStatus(`다운로드 트리거: ${fileName}`);
-      downloadBlob(blob, fileName);
-      addStatus(`✓ 다운로드 완료`);
-
-      if (inputCount === 0) {
-        handleError(new Error(
-          `다운로드는 시작됐지만 근태 입력 0건. ` +
-          (missing.length > 0
-            ? `매칭 실패: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` 외 ${missing.length - 5}명` : ""}.`
-            : `PDF 인식이 안 되었습니다.`)
-        ));
-      } else {
-        handleSuccess(`✓ 다운로드 완료! ${inputCount}명 / ${totalCells}개 셀 입력${missing.length ? ` (매칭 실패: ${missing.length}명)` : ""}`);
+      log("📤 파일 업로드 중...");
+      log("⚙️ Python 백엔드 처리 중 (수식 보존 엔진)...");
+      if (serverAlive === false || pinging) {
+        log("⏰ 서버 콜드 스타트 — 첫 요청은 30~60초 소요될 수 있습니다");
       }
-    } catch (e: any) {
-      console.error("[엑셀 처리 에러]", e);
-      handleError(e, { fallback: `엑셀 처리 실패: ${e?.message || "알 수 없는 오류"}` });
-    } finally { setGenerating(false); }
-  };
 
-  // 디버그: 엑셀 시트 구조 보기 (매칭 실패 진단용)
-  const handleInspectExcel = async () => {
-    if (!excelFile) return;
-    try {
-      const buffer = await excelFile.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: "array" });
-      const sheetName = wb.SheetNames.find((n) => /근태/.test(n));
-      if (!sheetName) { handleError(new Error("'근태' 시트 없음")); return; }
-      const sheet = wb.Sheets[sheetName];
-      const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      const startTime = Date.now();
+      const { blob, filename, summary } = await attendanceApi.process({
+        pdf: pdfFile,
+        excel: excelFile,
+        year,
+        month,
+        holidays,
+        standardHours,
+        normalStart,
+        normalEnd,
+        sheetName: sheetName.trim() || undefined,
+        overwriteExisting,
+      });
 
-      // A~F열의 처음 30행 출력
-      console.log(`[엑셀 진단] 시트: ${sheetName}, 총 ${data.length}행`);
-      console.log("[엑셀 진단] 처음 30행 (A~F열):");
-      for (let r = 0; r < Math.min(30, data.length); r++) {
-        const row = (data[r] || []).slice(0, 6);
-        console.log(`  R${r + 1}:`, row.map(v => v === "" ? "_" : String(v).slice(0, 15)).join(" | "));
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      log(`✅ 처리 완료 (${elapsed}초)`);
+      log(`📊 PDF: ${summary.pdf_meta.total_employees}명 인식`);
+      log(`📊 근태 입력: ${summary.attendance.filled_employees}명 / ${summary.attendance.total_cells}셀`);
+      log(`📊 연차 입력: ${summary.leave.filled_employees}명`);
+      log(`🛡 수식 보존: ${summary.validation_ok ? "✅ OK" : "⚠️ 확인 필요"}`);
+      log(`   원본 ${summary.validation["원본_수식_개수"] || 0} → 결과 ${summary.validation["결과_수식_개수"] || 0}`);
+
+      if (summary.attendance.missing.length > 0) {
+        log(`⚠️ 매칭 실패: ${summary.attendance.missing.join(", ")}`);
       }
-      handleSuccess("엑셀 구조를 콘솔(F12)에서 확인하세요");
-    } catch (e: any) {
-      handleError(e, { fallback: "엑셀 진단 실패" });
+
+      setResult(summary);
+      setResultBlob({ blob, filename });
+      handleSuccess(`자동 입력 완료. 검토리스트와 검증 결과를 확인하세요.`);
+    } catch (err: any) {
+      log(`❌ 오류: ${err.message}`);
+      handleError(err);
+    } finally {
+      setProcessing(false);
     }
   };
 
-  const onPdfDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault(); setPdfDrag(false);
-    const f = e.dataTransfer.files?.[0]; if (f) handlePdf(f);
-  }, []);
-  const onExcelDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault(); setExcelDrag(false);
-    const f = e.dataTransfer.files?.[0]; if (f) setExcelFile(f);
-  }, []);
+  const handleDownload = () => {
+    if (!resultBlob) return;
+    const url = URL.createObjectURL(resultBlob.blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = resultBlob.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    handleSuccess("다운로드 시작");
+  };
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-[var(--brand-navy)]">① 출근부 업로드 (PDF → 근태)</h1>
-        <p className="text-sm text-gray-500 mt-1">본사 PDF 출근부를 업로드하면 청구 엑셀의 근태 시트에 자동으로 입력됩니다. 원본 엑셀은 절대 변경되지 않고 새 파일로 다운로드됩니다.</p>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">📋 출근부 자동 입력</h1>
+        <p className="text-sm text-slate-600 mt-1">
+          PDF 출근부와 청구 엑셀을 업로드하면 근태/연차 시트에 자동 입력됩니다.
+          <span className="text-emerald-700 font-medium ml-1">수식·서식 100% 보존</span>
+        </p>
       </div>
 
-      {/* 단계 표시 */}
-      <div className="flex items-center justify-center gap-2 mb-8 overflow-x-auto">
-        {[
-          { num: 1, label: "PDF 업로드", done: !!pdfFile },
-          { num: 2, label: "엑셀 업로드", done: !!excelFile },
-          { num: 3, label: "다운로드", done: false },
-        ].map((s, i, arr) => (
-          <div key={s.num} className="flex items-center gap-2">
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-full text-sm font-semibold whitespace-nowrap ${
-              s.done ? "bg-green-50 text-green-600" : i === [pdfFile, excelFile, false].findIndex((x) => !x) ? "bg-blue-50 text-blue-600" : "bg-gray-50 text-gray-400"
-            }`}>
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
-                s.done ? "bg-green-500 text-white" : i === [pdfFile, excelFile, false].findIndex((x) => !x) ? "bg-blue-500 text-white" : "bg-gray-300 text-white"
-              }`}>{s.done ? "✓" : s.num}</div>
-              {s.label}
+      {/* 서버 상태 */}
+      <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${
+        serverAlive === true
+          ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+          : serverAlive === false
+            ? "bg-amber-50 text-amber-800 border border-amber-200"
+            : "bg-slate-50 text-slate-700 border border-slate-200"
+      }`}>
+        {pinging ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>처리 서버 깨우는 중...</span>
+          </>
+        ) : serverAlive ? (
+          <>
+            <Wifi className="w-4 h-4" />
+            <span>처리 서버 연결됨</span>
+          </>
+        ) : (
+          <>
+            <WifiOff className="w-4 h-4" />
+            <span>처리 서버 응답 없음. 첫 요청 시 30~60초 깨어나는 시간이 필요할 수 있습니다.</span>
+          </>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* 좌측: 설정 */}
+        <div className="lg:col-span-1 space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <h3 className="font-semibold text-slate-900 mb-4">⚙️ 처리 설정</h3>
+
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <label className="block">
+                <span className="text-xs text-slate-600">대상 연도</span>
+                <input
+                  type="number"
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                  className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-slate-600">대상 월</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={month}
+                  onChange={(e) => setMonth(Number(e.target.value))}
+                  className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
+              </label>
             </div>
-            {i < arr.length - 1 && <ArrowRight size={14} className="text-gray-300" />}
-          </div>
-        ))}
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        {/* PDF 업로드 */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setPdfDrag(true); }}
-          onDragLeave={(e) => { e.preventDefault(); setPdfDrag(false); }}
-          onDrop={onPdfDrop}
-          onClick={() => pdfRef.current?.click()}
-          className={`bg-white rounded-2xl border-2 border-dashed p-6 sm:p-8 text-center cursor-pointer transition-all ${
-            pdfDrag ? "border-red-400 bg-red-50" : pdfFile ? "border-green-300 bg-green-50/30" : "border-gray-200 hover:border-red-200"
-          }`}
-        >
-          <FileText size={36} className={`mx-auto mb-2 ${pdfFile ? "text-green-500" : "text-red-400"}`} />
-          <h3 className="font-bold text-[var(--brand-navy)] mb-1">① PDF 출근부</h3>
-          {pdfFile ? (
-            <div className="text-xs text-gray-600 mt-2">
-              <CheckCircle2 size={14} className="inline mr-1 text-green-500" />
-              {pdfFile.name}
-              <div className="mt-2 text-green-600 font-semibold">
-                {parsing ? "파싱중..." : pdfData ? `${Object.keys(pdfData).length}명 인식` : ""}
+            <label className="block mb-3">
+              <span className="text-xs text-slate-600">근태 시트명 (비우면 자동감지)</span>
+              <input
+                type="text"
+                value={sheetName}
+                onChange={(e) => setSheetName(e.target.value)}
+                placeholder="예: 근태 ( 5월 )"
+                className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </label>
+
+            <label className="block mb-3">
+              <span className="text-xs text-slate-600">월 기준시간</span>
+              <input
+                type="number"
+                value={standardHours}
+                onChange={(e) => setStandardHours(Number(e.target.value))}
+                className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </label>
+
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <label className="block">
+                <span className="text-xs text-slate-600">정상 출근</span>
+                <input
+                  type="text"
+                  value={normalStart}
+                  onChange={(e) => setNormalStart(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-slate-600">정상 퇴근</span>
+                <input
+                  type="text"
+                  value={normalEnd}
+                  onChange={(e) => setNormalEnd(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
+              </label>
+            </div>
+
+            <label className="block mb-3">
+              <span className="text-xs text-slate-600">공휴일 (한 줄에 하나)</span>
+              <textarea
+                value={holidays}
+                onChange={(e) => setHolidays(e.target.value)}
+                rows={3}
+                placeholder="2026-05-05 어린이날&#10;2026-05-25 부처님오신날 대체공휴일"
+                className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"
+              />
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={overwriteExisting}
+                onChange={(e) => setOverwriteExisting(e.target.checked)}
+                className="rounded"
+              />
+              기존 값 덮어쓰기
+            </label>
+          </div>
+        </div>
+
+        {/* 우측: 파일 업로드 + 실행 */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* PDF */}
+            <div
+              onClick={() => pdfInputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const f = e.dataTransfer.files[0];
+                if (f) handlePdfSelect(f);
+              }}
+              className={`border-2 border-dashed rounded-xl p-6 cursor-pointer transition ${
+                pdfFile
+                  ? "border-emerald-300 bg-emerald-50"
+                  : "border-slate-300 hover:border-sky-400 bg-white"
+              }`}
+            >
+              <input
+                ref={pdfInputRef}
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handlePdfSelect(e.target.files[0])}
+              />
+              <div className="flex flex-col items-center text-center">
+                <FileText className={`w-10 h-10 mb-2 ${pdfFile ? "text-emerald-600" : "text-slate-400"}`} />
+                <div className="font-medium text-slate-900 text-sm">📄 PDF 출근부</div>
+                {pdfFile ? (
+                  <div className="mt-1 text-xs text-emerald-700">{pdfFile.name}</div>
+                ) : (
+                  <div className="mt-1 text-xs text-slate-500">드래그하거나 클릭</div>
+                )}
               </div>
             </div>
-          ) : (
-            <p className="text-xs text-gray-500">PDF를 끌어놓거나 클릭</p>
-          )}
-          <input ref={pdfRef} type="file" accept=".pdf" onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePdf(f); }} className="hidden" />
-        </div>
 
-        {/* 엑셀 업로드 */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setExcelDrag(true); }}
-          onDragLeave={(e) => { e.preventDefault(); setExcelDrag(false); }}
-          onDrop={onExcelDrop}
-          onClick={() => excelRef.current?.click()}
-          className={`bg-white rounded-2xl border-2 border-dashed p-6 sm:p-8 text-center cursor-pointer transition-all ${
-            excelDrag ? "border-green-400 bg-green-50" : excelFile ? "border-green-300 bg-green-50/30" : "border-gray-200 hover:border-green-200"
-          }`}
-        >
-          <FileSpreadsheet size={36} className={`mx-auto mb-2 ${excelFile ? "text-green-500" : "text-green-600"}`} />
-          <h3 className="font-bold text-[var(--brand-navy)] mb-1">② 청구 엑셀</h3>
-          {excelFile ? (
-            <div className="text-xs text-gray-600 mt-2">
-              <CheckCircle2 size={14} className="inline mr-1 text-green-500" />
-              {excelFile.name}
+            {/* Excel */}
+            <div
+              onClick={() => excelInputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const f = e.dataTransfer.files[0];
+                if (f) handleExcelSelect(f);
+              }}
+              className={`border-2 border-dashed rounded-xl p-6 cursor-pointer transition ${
+                excelFile
+                  ? "border-emerald-300 bg-emerald-50"
+                  : "border-slate-300 hover:border-sky-400 bg-white"
+              }`}
+            >
+              <input
+                ref={excelInputRef}
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handleExcelSelect(e.target.files[0])}
+              />
+              <div className="flex flex-col items-center text-center">
+                <FileSpreadsheet className={`w-10 h-10 mb-2 ${excelFile ? "text-emerald-600" : "text-slate-400"}`} />
+                <div className="font-medium text-slate-900 text-sm">📊 청구 엑셀</div>
+                {excelFile ? (
+                  <div className="mt-1 text-xs text-emerald-700">{excelFile.name}</div>
+                ) : (
+                  <div className="mt-1 text-xs text-slate-500">드래그하거나 클릭</div>
+                )}
+              </div>
             </div>
-          ) : (
-            <p className="text-xs text-gray-500">엑셀(.xlsx)을 끌어놓거나 클릭</p>
+          </div>
+
+          {/* 실행 버튼 */}
+          <button
+            onClick={handleProcess}
+            disabled={!pdfFile || !excelFile || processing}
+            className="w-full py-3 bg-sky-600 text-white rounded-xl font-medium hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {processing ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                처리 중...
+              </>
+            ) : (
+              <>
+                <ArrowRight className="w-5 h-5" />
+                🚀 근태 + 연차 자동 입력 실행
+              </>
+            )}
+          </button>
+
+          {/* 진행 로그 */}
+          {progress.length > 0 && (
+            <div className="bg-slate-900 text-emerald-300 rounded-xl p-4 font-mono text-xs max-h-60 overflow-auto">
+              {progress.map((line, i) => (
+                <div key={i}>{line}</div>
+              ))}
+            </div>
           )}
-          <input ref={excelRef} type="file" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) setExcelFile(f); }} className="hidden" />
-        </div>
-      </div>
 
-      {/* 연/월 */}
-      {(pdfFile || excelFile) && (
-        <div className="bg-blue-50 rounded-xl p-4 mb-4 flex items-center gap-3 flex-wrap">
-          <span className="text-sm font-semibold text-[var(--brand-navy)]">대상 연월:</span>
-          <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} className="w-24 px-3 py-2 rounded-lg border border-gray-200 text-sm" />
-          <span>년</span>
-          <input type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} className="w-20 px-3 py-2 rounded-lg border border-gray-200 text-sm" />
-          <span>월</span>
-          <span className="text-xs text-gray-500 ml-auto">파일명에서 자동 인식 (수동 수정 가능)</span>
-        </div>
-      )}
-
-      {/* 실행 버튼 */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <button
-          onClick={handleProcess}
-          disabled={!excelFile || generating}
-          className="sm:col-span-2 flex items-center justify-center gap-2 py-4 rounded-xl bg-[var(--brand-blue)] text-white font-semibold text-base disabled:opacity-50 min-h-[52px]"
-        >
-          {generating ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
-          {pdfData ? "근태 자동 입력 + 다운로드" : "엑셀만 다운로드 (PDF 없이)"}
-        </button>
-        <button
-          onClick={handleInspectExcel}
-          disabled={!excelFile}
-          className="flex items-center justify-center gap-2 py-4 rounded-xl border border-gray-200 text-sm font-semibold disabled:opacity-50 hover:bg-gray-50 min-h-[52px]"
-          title="엑셀 시트 구조를 콘솔에 출력"
-        >
-          🔍 엑셀 구조 진단
-        </button>
-      </div>
-
-      {/* 진행 상태 로그 (실시간) */}
-      {statusLog.length > 0 && (
-        <div className="mt-4 bg-gray-900 text-green-400 rounded-xl p-4 font-mono text-xs max-h-48 overflow-auto">
-          <div className="text-white font-semibold mb-2">📋 진행 로그</div>
-          {statusLog.map((line, i) => (
-            <div key={i} className="break-all">{line}</div>
-          ))}
-        </div>
-      )}
-
-      {/* PDF 결과 미리보기 */}
-      {pdfData && (
-        <div className="mt-6 bg-white rounded-2xl border border-gray-100 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="font-bold text-[var(--brand-navy)] text-sm">PDF 인식 결과 ({Object.keys(pdfData).length}명)</div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {Object.keys(pdfData).map((name) => {
-              const days = pdfData[name];
-              const filled = Object.values(days).filter((d) => d.start || d.end || d.note).length;
-              return (
-                <div key={name} className="px-3 py-1.5 rounded-lg bg-gray-50 text-xs">
-                  <span className="font-semibold text-[var(--brand-navy)]">{name}</span>
-                  <span className="text-gray-500 ml-2">{filled}일</span>
+          {/* 결과 */}
+          {result && resultBlob && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+              <div className="flex items-start gap-3">
+                {result.validation_ok ? (
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 flex-shrink-0" />
+                ) : (
+                  <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0" />
+                )}
+                <div className="flex-1">
+                  <h3 className="font-semibold text-slate-900">처리 결과</h3>
+                  <p className="text-sm text-slate-600 mt-0.5">
+                    {result.validation_ok
+                      ? "수식·서식이 100% 보존되었습니다."
+                      : "수식 일부에 변경이 감지되었습니다. 검토리스트를 확인하세요."}
+                  </p>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+              </div>
 
-      {/* 안내 */}
-      <div className="mt-6 bg-amber-50 rounded-xl p-4 text-xs text-amber-700">
-        <div className="flex items-start gap-2">
-          <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
-          <div>
-            <strong>이 기능은 출근부 자동 입력 전용입니다.</strong> 청구내역 입력은 <strong>"② 청구내역 업로드"</strong> 메뉴에서, 명세서 발송은 <strong>"③ 명세서 발송"</strong> 메뉴에서 진행하세요.
-          </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <div className="text-xs text-slate-500">PDF 직원</div>
+                  <div className="text-xl font-bold text-slate-900">{result.pdf_meta.total_employees}</div>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <div className="text-xs text-slate-500">근태 입력</div>
+                  <div className="text-xl font-bold text-slate-900">{result.attendance.filled_employees}</div>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <div className="text-xs text-slate-500">연차 입력</div>
+                  <div className="text-xl font-bold text-slate-900">{result.leave.filled_employees}</div>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <div className="text-xs text-slate-500">매칭 실패</div>
+                  <div className="text-xl font-bold text-slate-900">
+                    {result.attendance.missing.length}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-700 space-y-1">
+                <div>원본 수식: <strong>{result.validation["원본_수식_개수"]}</strong>개 → 결과 수식: <strong>{result.validation["결과_수식_개수"]}</strong>개</div>
+                <div>수식 손실: <strong>{result.validation["수식_손실"]}</strong>개 / 수식 변경: <strong>{result.validation["수식_변경"]}</strong>개</div>
+                <div>병합셀 변경: <strong>{result.validation["병합셀_변경된_시트"]}</strong>개 시트</div>
+                {result.review_count > 0 && (
+                  <div>검토 항목: <strong>{result.review_count}</strong>건 (다운로드 파일의 <code>자동입력_검토리스트</code> 시트 확인)</div>
+                )}
+              </div>
+
+              <button
+                onClick={handleDownload}
+                className="w-full py-3 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 flex items-center justify-center gap-2"
+              >
+                <Download className="w-5 h-5" />
+                완성 엑셀 다운로드 ({resultBlob.filename})
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
