@@ -187,14 +187,18 @@ async def process_attendance(
             "review_count": len(att_result["review_list"]) + len(leave_result.get("review_list", [])),
         }
 
+        from urllib.parse import quote
         encoded_summary = json.dumps(result_summary, ensure_ascii=False)
         out_filename = excel_out_path.name
+        # RFC 5987: 한글 파일명을 UTF-8로 percent-encode
+        ascii_fallback = "result.xlsx"
+        utf8_filename = quote(out_filename, safe="")
 
         return Response(
             content=content,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={
-                "Content-Disposition": f'attachment; filename="{out_filename}"',
+                "Content-Disposition": f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{utf8_filename}",
                 "X-Process-Result": encoded_summary.encode("utf-8").hex(),
                 "Access-Control-Expose-Headers": "X-Process-Result, Content-Disposition",
             },

@@ -397,11 +397,11 @@ export const attendanceApi = {
           ...(token ? { "X-Admin-Token": token } : {}),
         },
         body: formData,
-        timeout: 120_000, // 2분 (콜드 스타트 + 처리시간)
+        timeout: 300_000, // 5분 (Free Tier 콜드 스타트 + 큰 파일 처리)
       });
     } catch (err: any) {
       if (err.name === "AbortError") {
-        throw new ApiError("처리 시간이 초과되었습니다. 서버가 깨어나는 중일 수 있어요. 잠시 후 다시 시도해주세요.", 0, "TIMEOUT");
+        throw new ApiError("처리 시간이 5분을 초과했습니다. 서버가 깨어나는 중일 수 있어요. 1분 후 다시 시도해주세요.", 0, "TIMEOUT");
       }
       throw new ApiError("처리 서버에 연결할 수 없습니다.", 0, "NETWORK");
     }
