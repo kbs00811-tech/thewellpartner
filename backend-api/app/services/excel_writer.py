@@ -264,9 +264,13 @@ def is_valid_day(year: int, month: int, day: int) -> bool:
 
 def classify_attendance(slot: dict, year: int, month: int, day: int,
                         paid_holidays: dict, normal_start: str = "08:30",
-                        normal_end: str = "17:30") -> dict:
+                        normal_end: str = "17:30",
+                        hire_date: Optional[datetime.date] = None) -> dict:
     """
     PDF 슬롯 → 카테고리별 시간 + 비고 + 인정시간
+
+    Args:
+      hire_date: 직원 입사일. target_date < hire_date면 모두 빈 결과 (자동 입력 X)
 
     Returns:
       {
@@ -291,6 +295,15 @@ def classify_attendance(slot: dict, year: int, month: int, day: int,
 
     if not is_valid_day(year, month, day):
         return result
+
+    # === 입사일 게이트 ===
+    if hire_date is not None:
+        try:
+            target_date = datetime.date(year, month, day)
+            if target_date < hire_date:
+                return result  # 입사 전 → 자동 입력 X
+        except ValueError:
+            return result
 
     if note in ("퇴사",):
         return result
@@ -382,18 +395,25 @@ def calc_weekly_paid_holiday(
     year: int,
     month: int,
     is_employed_in_month: bool = False,
+    hire_date: Optional[datetime.date] = None,
+    feb_credit: Optional[bool] = None,
 ) -> Dict[int, dict]:
     """
     일요일 주휴 자동 판단.
 
     Args:
       is_employed_in_month: 엑셀 근태표에 이 직원이 month 근무자로 등록되어 있는지
+      hire_date: 입사일 (없으면 None). 입사일 이전 일요일/평일 검사 시 제외.
+      feb_credit: 2월 마지막 주 평일 모두 인정 여부 (월초 첫 일요일 판단용)
 
     조건:
       - 일반 일요일: 그 주 월~금 모두 인정 + 다음 주 월요일 인정
-      - 월초 첫 일요일 (예: 3/1): 직전 월~금이 이전 달에 있어 검사 불가하므로
-        직원이 month 근무자이고 첫째 주(첫 일요일~+7일) 안에 인정 항목이 있으면 인정
-      - 월말 마지막 일요일: 다음주 월요일이 다음 달이면 보수적으로 인정
+        (그 주 평일에 입사 전 날짜가 있으면 주휴 제외)
+      - 월초 첫 일요일 (예: 3/1):
+        * hire_date <= 첫 일요일이어야 함 (입사 전 일요일은 X)
+        * 2월 마지막 주 인정 (feb_credit=True)
+        * 3월 첫 근무일 인정
+      - 월말 마지막 일요일: 다음주 월요일이 다음 달이면 보수적 인정
 
     인정 항목: 정상출근(기본>=8) / 연차 / 반차 / 반반차 / 유급
 
@@ -413,6 +433,17 @@ def calc_weekly_paid_holiday(
             return True
         return False
 
+    def is_before_hire(day: int) -> bool:
+        """이 day가 입사일 이전인지"""
+        if hire_date is None:
+            return False
+        if day < 1:
+            return False
+        try:
+            return datetime.date(year, month, day) < hire_date
+        except ValueError:
+            return False
+
     # 월의 모든 일요일 수집
     sundays_in_month: List[int] = []
     for day in range(1, 32):
@@ -425,11 +456,18 @@ def calc_weekly_paid_holiday(
     first_sunday = sundays_in_month[0]
 
     for sunday in sundays_in_month:
+        # 게이트 1: 일요일 자체가 입사 전이면 제외
+        if is_before_hire(sunday):
+            continue
+
         # 그 주 월~금 (일요일 기준 2~6일 전 = 금,목,수,화,월)
-        # 일요일-1 = 토요일이므로 제외해야 함
         weekdays = [sunday - offset for offset in range(2, 7)]
         weekdays_in_month = [d for d in weekdays if d >= 1 and is_valid_day(year, month, d)]
         weekdays_outside_month_count = 5 - len(weekdays_in_month)
+
+        # 게이트 2: 그 주 평일에 입사 전 날짜가 포함되면 주휴 제외
+        if any(is_before_hire(d) for d in weekdays_in_month):
+            continue
 
         # 다음 주 월요일
         next_monday = sunday + 1
@@ -438,18 +476,31 @@ def calc_weekly_paid_holiday(
 
         # 케이스 A: 월초 첫 일요일 (직전 평일이 대부분 이전 달)
         if sunday == first_sunday and weekdays_outside_month_count >= 4:
-            # 첫째 주(첫 일요일 포함 + 7일 안)에 인정 항목 있는지
+            # 입사일 검사: 첫 일요일이 입사일 이후여야 함 (이미 위에서 체크)
+            # 2월 마지막 주 인정 + 3월 첫 근무일 인정
             first_week_end = min(sunday + 7, 31)
             first_week_credit = any(
                 has_credit(d) for d in range(1, first_week_end + 1)
                 if is_valid_day(year, month, d)
             )
-            if is_employed_in_month and first_week_credit:
+
+            # feb_credit이 True면 2월 마지막 주도 인정됨
+            # feb_credit이 None이면 2월 시트 못 읽음 → 보수적으로 입력 안 함
+            # feb_credit이 False면 2월 마지막 주 불인정 → 입력 안 함
+            if (
+                is_employed_in_month
+                and first_week_credit
+                and feb_credit is True
+            ):
                 sundays_to_pay[sunday] = {
                     "hours": 8.0,
-                    "reason": "월초 첫 일요일 — 직원 month 근무자 + 첫째 주 인정 활동 → 주휴",
+                    "reason": (
+                        "월초 첫 일요일 — 2월 마지막 주 인정 + "
+                        "3월 첫째 주 인정 → 주휴"
+                    ),
                     "auto": True,
                 }
+            # else: 입력 안 함 (검토리스트는 호출자가 처리)
             continue
 
         # 케이스 B: 일반 일요일 — 그 주 month 안 평일 모두 인정 + 다음 주 월요일 인정
@@ -505,10 +556,21 @@ def fill_attendance_sheet(
     normal_start: str = "08:30",
     normal_end: str = "17:30",
     overwrite_existing: bool = False,
+    hire_dates: Optional[Dict[str, datetime.date]] = None,
+    feb_credit_map: Optional[Dict[str, Optional[bool]]] = None,
 ) -> dict:
-    """근태 시트 자동 입력 — 6행 구조, 텍스트는 모두 연장 행에 입력"""
+    """
+    근태 시트 자동 입력 — 6행 구조, 텍스트는 모두 연장 행에 입력.
+
+    Args:
+      hire_dates: {정규화_이름: 입사일}. 입사일 이전 날짜는 자동 입력 X.
+      feb_credit_map: {정규화_이름: True/False/None}. 2월 마지막 주 인정 여부.
+                       None이면 2월 시트 없거나 직원 못 찾음 → 3/1 주휴 입력 X.
+    """
     user_holidays = paid_holidays or {}
     merged_holidays = merge_holidays(year, month, user_holidays)
+    hire_dates = hire_dates or {}
+    feb_credit_map = feb_credit_map or {}
 
     wb = load_workbook(excel_path, data_only=False)
     sheet_used = find_target_sheet(wb, month, sheet_name)
@@ -530,6 +592,10 @@ def fill_attendance_sheet(
         "주휴_기본칸_충돌": 0,
         "주휴_표기칸_충돌": 0,
         "유급수정_잘못된주휴": 0,
+        "입사일_확인필요": 0,
+        "입사전_자동입력_제외": 0,
+        "3월1일_주휴제외": 0,
+        "3월2일_유급제외": 0,
     }
 
     for name, days in pdf_data.items():
@@ -544,16 +610,91 @@ def fill_attendance_sheet(
             })
             continue
 
+        # === 입사일 / 2월 인정 정보 조회 ===
+        name_norm = normalize_name(name)
+        emp_hire_date: Optional[datetime.date] = hire_dates.get(name_norm)
+        emp_feb_credit: Optional[bool] = feb_credit_map.get(name_norm)
+
+        if emp_hire_date is None:
+            counters["입사일_확인필요"] += 1
+            review.append({
+                "구분": "입사일_확인필요",
+                "성명": name,
+                "일자": "",
+                "요일": "",
+                "PDF원문": "",
+                "입력값": "",
+                "메시지": "엑셀/PDF 어디서도 입사일을 확인 못함 — 정상 직원으로 가정 (3/1부터 입력)",
+            })
+
         classified: Dict[int, dict] = {}
         for day in range(1, 32):
             slot = days.get(day, {})
             classified[day] = classify_attendance(
-                slot, year, month, day, merged_holidays, normal_start, normal_end
+                slot, year, month, day, merged_holidays, normal_start, normal_end,
+                hire_date=emp_hire_date,
             )
 
-        # 직원이 매칭됐으니 month 근무자로 등록된 것 → 3/1 같은 월초 주휴 판단 가능
+        # 입사 전 날짜에 PDF 데이터가 있어도 자동 입력 차단됨 (classify_attendance가 빈 결과 반환)
+        # 카운터: 차단된 날짜 수 기록
+        if emp_hire_date is not None:
+            for day in range(1, 32):
+                if not is_valid_day(year, month, day):
+                    continue
+                target_date = datetime.date(year, month, day)
+                if target_date < emp_hire_date:
+                    slot = days.get(day, {})
+                    if slot.get("start") or slot.get("end") or slot.get("note"):
+                        counters["입사전_자동입력_제외"] += 1
+
+        # 3월 1일 주휴 / 3월 2일 유급 입사일 게이트 — 명시적 카운터
+        if emp_hire_date is not None:
+            try:
+                first_sunday = datetime.date(year, month, 1)
+                # 3/1이 일요일인 경우만 카운트
+                if first_sunday.weekday() == 6 and first_sunday < emp_hire_date:
+                    counters["3월1일_주휴제외"] += 1
+                    review.append({
+                        "구분": "3월1일_주휴제외",
+                        "성명": name,
+                        "일자": f"{year}-{month:02d}-01",
+                        "요일": "일",
+                        "PDF원문": "",
+                        "입력값": "(주휴 미입력)",
+                        "메시지": f"입사일 {emp_hire_date} > 3/1 → 입사 전 → 주휴 제외",
+                    })
+            except ValueError:
+                pass
+
+            # 평일 공휴일 입사일 검사
+            for date_str_h, hname in merged_holidays.items():
+                try:
+                    parts = date_str_h.split("-")
+                    hd = datetime.date(int(parts[0]), int(parts[1]), int(parts[2]))
+                except (ValueError, IndexError):
+                    continue
+                if hd.weekday() in (5, 6):
+                    continue
+                if hd.month != month:
+                    continue
+                if hd < emp_hire_date:
+                    counters["3월2일_유급제외" if hd.day == 2 and month == 3 else "입사전_자동입력_제외"] += 1
+                    review.append({
+                        "구분": "공휴일_유급_제외",
+                        "성명": name,
+                        "일자": date_str_h,
+                        "요일": "월화수목금"[hd.weekday()],
+                        "PDF원문": "",
+                        "입력값": "(유급 미입력)",
+                        "메시지": f"입사일 {emp_hire_date} > {date_str_h} ({hname}) → 입사 전 → 유급 제외",
+                    })
+
+        # 직원이 매칭됐으니 month 근무자로 등록된 것
         sundays = calc_weekly_paid_holiday(
-            classified, year, month, is_employed_in_month=True
+            classified, year, month,
+            is_employed_in_month=True,
+            hire_date=emp_hire_date,
+            feb_credit=emp_feb_credit,
         )
 
         # 일요일에 PDF 실제 근무가 있으면 주휴 자동 입력 제외
@@ -748,7 +889,7 @@ def fill_attendance_sheet(
 
         # === 평일 공휴일 자가 교정 sweep ===
         # 안전장치: 평일 공휴일 칸의 연장 행에 잘못된 "주휴"가 있으면 "유급"으로 교체.
-        # (이전 처리 또는 어떤 이유로 잘못 입력된 경우 방어)
+        # 입사일 이전 공휴일은 sweep 대상에서 제외 (입력 자체가 없어야 함).
         for date_str_h in merged_holidays:
             parts = date_str_h.split("-")
             if len(parts) != 3:
@@ -760,6 +901,9 @@ def fill_attendance_sheet(
                 continue
             # 주말 공휴일은 빈칸이므로 sweep 대상 X
             if hd.weekday() in (5, 6):
+                continue
+            # 입사일 게이트: 입사 전 공휴일은 sweep 안 함
+            if emp_hire_date is not None and hd < emp_hire_date:
                 continue
             hcol = DAY_TO_COL.get(hday)
             if not hcol:
