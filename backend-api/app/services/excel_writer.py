@@ -35,6 +35,13 @@ from .holidays import merge_holidays
 # 직원 블록의 행 라벨 (F열에서 검색)
 BASIC_LABELS = {"기본", "기본근무", "정상"}
 
+# 명시적 day → col 매핑 (Python/openpyxl 1-based)
+# day=1 → col=8 (H), day=2 → col=9 (I), ..., day=31 → col=38 (AL)
+DAY_TO_COL: Dict[int, int] = {day: 7 + day for day in range(1, 32)}
+
+# 31일 옆 월말 주휴보정칸
+MONTHLY_ADJUSTMENT_COL: int = 39  # AM
+
 
 def is_formula_cell(cell) -> bool:
     """수식 셀 판별"""
@@ -522,6 +529,7 @@ def fill_attendance_sheet(
         "일요일주휴_제외": 0,
         "주휴_기본칸_충돌": 0,
         "주휴_표기칸_충돌": 0,
+        "유급수정_잘못된주휴": 0,
     }
 
     for name, days in pdf_data.items():
@@ -577,7 +585,7 @@ def fill_attendance_sheet(
         for day in range(1, 32):
             if not is_valid_day(year, month, day):
                 continue
-            col = 7 + day  # H=8 → 1일
+            col = DAY_TO_COL[day]  # day=1→8(H), day=2→9(I), ..., day=31→38(AL)
             c = classified[day]
             dow = get_dow(year, month, day)
             is_weekend = dow in ("토", "일")
@@ -671,12 +679,39 @@ def fill_attendance_sheet(
                     cell_count += 1
 
         # 일요일 주휴 입력 — 기본 행에 8 + 연장 행에 "주휴"
-        # 기존 값과 충돌 시 덮어쓰지 않고 검토리스트에 남김
+        # 안전장치:
+        #   1. day가 진짜 일요일인지 재검증 (평일/토요일에 주휴 입력 방지)
+        #   2. 평일 공휴일(예: 3/2 삼일절 대체)에는 절대 주휴 입력 금지
+        #   3. 기존 값과 충돌 시 덮어쓰지 않고 검토리스트에 남김
         for sday, info in sundays_filtered.items():
-            scol = 7 + sday  # day=1 → col=8(H), day=8 → col=15(O), day=29 → col=36(AJ)
+            # 안전장치 1: day가 일요일인지 재검증
+            if not is_valid_day(year, month, sday):
+                continue
+            sd = datetime.date(year, month, sday)
+            if sd.weekday() != 6:
+                review.append({
+                    "구분": "주휴_방어_일요일아님",
+                    "성명": name,
+                    "일자": f"{year}-{month:02d}-{sday:02d}",
+                    "요일": "월화수목금토일"[sd.weekday()],
+                    "PDF원문": "",
+                    "입력값": "(주휴 입력 거부)",
+                    "메시지": f"day={sday}는 일요일이 아님 → 주휴 입력 거부",
+                })
+                continue
+
+            # 안전장치 2: 평일 공휴일 날짜에는 주휴 입력 금지
+            sday_date_str = f"{year}-{month:02d}-{sday:02d}"
+            if sday_date_str in merged_holidays:
+                # 일요일 + 공휴일 동시 — 주휴를 우선 (3/1 삼일절+일요일 같은 케이스)
+                # 사용자 요구: 일요일 공휴일은 빈칸 또는 주휴, 평일 공휴일은 유급
+                # 이미 sd.weekday()==6 보장됨 → 그대로 진행
+                pass
+
+            scol = DAY_TO_COL[sday]  # day=1→8(H), day=8→15(O), day=15→22(V), day=22→29(AC), day=29→36(AJ)
             hrs = info["hours"]
             reason = info["reason"]
-            date_str = f"{year}-{month:02d}-{sday:02d}"
+            date_str = sday_date_str
 
             # 기본 칸 (8) — 보호 모드
             basic_ok = safe_set_value_with_protection(
@@ -711,10 +746,54 @@ def fill_attendance_sheet(
                 "메시지": reason,
             })
 
+        # === 평일 공휴일 자가 교정 sweep ===
+        # 안전장치: 평일 공휴일 칸의 연장 행에 잘못된 "주휴"가 있으면 "유급"으로 교체.
+        # (이전 처리 또는 어떤 이유로 잘못 입력된 경우 방어)
+        for date_str_h in merged_holidays:
+            parts = date_str_h.split("-")
+            if len(parts) != 3:
+                continue
+            try:
+                hday = int(parts[2])
+                hd = datetime.date(year, month, hday)
+            except (ValueError, IndexError):
+                continue
+            # 주말 공휴일은 빈칸이므로 sweep 대상 X
+            if hd.weekday() in (5, 6):
+                continue
+            hcol = DAY_TO_COL.get(hday)
+            if not hcol:
+                continue
+
+            note_cell = ws.cell(row=block["연장"], column=hcol)
+            # 병합셀/수식셀 보호
+            if isinstance(note_cell, MergedCell):
+                continue
+            if is_formula_cell(note_cell):
+                continue
+
+            existing = note_cell.value
+            if existing == "주휴":
+                note_cell.value = "유급"
+                counters["유급수정_잘못된주휴"] += 1
+                cell_count += 1
+                review.append({
+                    "구분": "유급수정",
+                    "성명": name,
+                    "일자": date_str_h,
+                    "요일": "월화수목금"[hd.weekday()],
+                    "PDF원문": "",
+                    "입력값": "기존 '주휴' → '유급'",
+                    "메시지": (
+                        f"{merged_holidays[date_str_h]} 평일 공휴일 — "
+                        f"잘못 입력된 '주휴'를 '유급'으로 자가 수정"
+                    ),
+                })
+
         # 월말 주휴 보정 — 31일 옆 (AM=39)
         adjustment = calc_monthly_adjustment(classified, sundays_filtered, standard_hours)
         if abs(adjustment) > 0.01:
-            adj_col = 39
+            adj_col = MONTHLY_ADJUSTMENT_COL  # 39 (AM)
             adj_value = round(adjustment, 1)
             # 보정값은 기본 행에 입력 (양식에 별도 주휴 행이 없으므로)
             if safe_set_value(ws, block["기본"], adj_col, adj_value, log):

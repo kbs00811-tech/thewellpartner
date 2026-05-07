@@ -216,6 +216,7 @@ async def process_attendance(
                 "일요일주휴_제외",
                 "주휴_기본칸_충돌",
                 "주휴_표기칸_충돌",
+                "유급수정_잘못된주휴",
             ]:
                 ws_review.append([k, str(counters.get(k, 0))])
 
