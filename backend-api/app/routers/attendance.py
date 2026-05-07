@@ -29,6 +29,7 @@ from ..services.hire_date import (
     merge_hire_dates,
     find_feb_attendance_sheet,
     check_feb_last_week_credit,
+    extract_employee_info_from_db,
 )
 from ..services.completeness import verify_input_completeness
 from ..auth import verify_admin_token
@@ -104,9 +105,11 @@ async def process_attendance(
         with open(excel_orig_path, "wb") as f:
             f.write(await excel.read())
 
-        # 1. 엑셀 사전 로드 — 직원명 + 입사일 + 2월 시트
+        # 1. 엑셀 사전 로드 — DB 시트 + 직원명 + 입사일 + 2월 시트
         excel_names: list[str] = []
         hire_dates_excel: dict = {}
+        resign_dates_db: dict = {}
+        db_info: dict = {}
         feb_sheet_name: Optional[str] = None
         feb_credit_map: dict = {}
 
@@ -116,14 +119,25 @@ async def process_attendance(
                 march_sheet = find_target_sheet(wb_pre, month, sheet_name_final)
                 excel_names = extract_employee_names_from_sheet(wb_pre, march_sheet)
 
-                # 직원정보 시트가 있으면 같이 검색
+                # DB 시트에서 입사일/퇴사일/재직여부 추출 (최우선)
+                db_info = extract_employee_info_from_db(wb_pre)
+
+                # 엑셀 시트에서 입사일 보완
                 candidate_sheets = [march_sheet]
                 for sn in wb_pre.sheetnames:
                     if "직원" in sn or "정보" in sn:
                         candidate_sheets.append(sn)
-                hire_dates_excel = extract_hire_dates_from_excel(
+                hire_dates_excel_only = extract_hire_dates_from_excel(
                     wb_pre, candidate_sheets, excel_names
                 )
+
+                # DB > 엑셀 우선순위로 입사일 병합
+                hire_dates_excel = dict(hire_dates_excel_only)
+                for norm, info in db_info.items():
+                    if info.get("hire_date"):
+                        hire_dates_excel[norm] = info["hire_date"]
+                    if info.get("resign_date"):
+                        resign_dates_db[norm] = info["resign_date"]
 
                 # 2월 시트
                 feb_sheet_name = find_feb_attendance_sheet(wb_pre, year, month)
@@ -140,6 +154,7 @@ async def process_attendance(
         except Exception:
             excel_names = []
             hire_dates_excel = {}
+            resign_dates_db = {}
 
         # 2. PDF 파싱
         try:
@@ -188,6 +203,7 @@ async def process_attendance(
                 overwrite_existing=overwrite_existing,
                 hire_dates=hire_dates,
                 feb_credit_map=feb_credit_map,
+                resign_dates=resign_dates_db,
             )
         except ValueError as e:
             raise HTTPException(422, str(e))
@@ -272,17 +288,38 @@ async def process_attendance(
             ws_review.append(["PDF매칭직원수", str(len(meta.get("matched_employees", [])))])
             ws_review.append(["2월시트_사용", str(feb_sheet_name or "없음")])
 
+            # DB 시트 정보
+            if db_info:
+                ws_review.append([])
+                ws_review.append([f"DB 시트 정보 ({len(db_info)}명)"])
+                ws_review.append(["직원명_정규화", "원본이름", "입사일", "퇴사일", "상태", "현장"])
+                for norm, info in db_info.items():
+                    ws_review.append([
+                        norm,
+                        info.get("name", ""),
+                        str(info.get("hire_date") or ""),
+                        str(info.get("resign_date") or ""),
+                        info.get("status") or "",
+                        info.get("site") or "",
+                    ])
+
             # 입사일 정보
             ws_review.append([])
-            ws_review.append(["입사일 정보"])
-            ws_review.append(["직원명_정규화", "입사일", "출처"])
+            ws_review.append(["입사일 정보 (DB > 엑셀 > PDF추정 우선순위)"])
+            ws_review.append(["직원명_정규화", "입사일", "퇴사일", "출처"])
             for nm in excel_names:
                 hd = hire_dates.get(nm)
+                rd = resign_dates_db.get(nm)
                 if hd is not None:
-                    src = "엑셀" if nm in hire_dates_excel else "PDF추정"
-                    ws_review.append([nm, str(hd), src])
+                    if nm in db_info and db_info[nm].get("hire_date"):
+                        src = "DB"
+                    elif nm in hire_dates_excel:
+                        src = "엑셀"
+                    else:
+                        src = "PDF추정"
+                    ws_review.append([nm, str(hd), str(rd or ""), src])
                 else:
-                    ws_review.append([nm, "(미확인)", "정상직원으로_가정"])
+                    ws_review.append([nm, "(미확인)", str(rd or ""), "정상직원으로_가정"])
 
             # 2월 인정 결과
             ws_review.append([])
@@ -323,6 +360,9 @@ async def process_attendance(
                 "유급수정_잘못된주휴",
                 "입사일_확인필요",
                 "입사전_자동입력_제외",
+                "퇴사후_자동입력_제외",
+                "월말보정_중도입사자제외",
+                "월말보정_중도퇴사자제외",
             ]:
                 ws_review.append([k, str(counters.get(k, 0))])
 

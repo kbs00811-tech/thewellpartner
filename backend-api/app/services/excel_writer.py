@@ -265,24 +265,32 @@ def is_valid_day(year: int, month: int, day: int) -> bool:
 def classify_attendance(slot: dict, year: int, month: int, day: int,
                         paid_holidays: dict, normal_start: str = "08:30",
                         normal_end: str = "17:30",
-                        hire_date: Optional[datetime.date] = None) -> dict:
+                        hire_date: Optional[datetime.date] = None,
+                        resign_date: Optional[datetime.date] = None) -> dict:
     """
     PDF 슬롯 → 카테고리별 시간 + 비고 + 인정시간
 
     Args:
       hire_date: 직원 입사일. target_date < hire_date면 모두 빈 결과 (자동 입력 X)
+      resign_date: 퇴사일. target_date > resign_date면 모두 빈 결과
 
     Returns:
       {
         "기본": 숫자 또는 0,
         "연장": 숫자 또는 0,
-        "심야": 숫자 또는 0,
-        "특근": 0 (이번 양식에서는 항상 0 — 주말 근무도 연장으로 처리),
-        "특잔": 숫자 또는 0,
+        "심야": 0,
+        "특근": 0,
+        "특잔": 0,
         "지각조퇴": 음수 또는 0,
         "비고": "" 또는 "연차"/"반차"/"반반차"/"유급",
-        "인정시간": 209h 합계 인정 시간 (기본 + 휴가 + 유급 시 8, 그 외 0)
+        "인정시간": 209h 합계 인정 시간
       }
+
+    중요한 변경:
+      - 잔업은 PDF의 ot_str (잔업 칸) 에 명시적 숫자가 있을 때만 연장으로 입력
+      - ot_str이 없는 경우, 시작/종료 시간이 정상과 달라도 자동 잔업 계산 X
+      - 대신 8h 기준 부족분만 지각조퇴로 입력
+        예: 13:30~20:00 → 실근무 5.5h → 부족 2.5h → 지각조퇴 -2 (절삭)
     """
     result = {
         "기본": 0, "연장": 0, "심야": 0, "특근": 0, "특잔": 0,
@@ -297,13 +305,18 @@ def classify_attendance(slot: dict, year: int, month: int, day: int,
         return result
 
     # === 입사일 게이트 ===
-    if hire_date is not None:
-        try:
-            target_date = datetime.date(year, month, day)
-            if target_date < hire_date:
-                return result  # 입사 전 → 자동 입력 X
-        except ValueError:
-            return result
+    target_date: Optional[datetime.date] = None
+    try:
+        target_date = datetime.date(year, month, day)
+    except ValueError:
+        return result
+
+    if hire_date is not None and target_date < hire_date:
+        return result  # 입사 전
+
+    # === 퇴사일 게이트 ===
+    if resign_date is not None and target_date > resign_date:
+        return result  # 퇴사 후
 
     if note in ("퇴사",):
         return result
@@ -361,23 +374,26 @@ def classify_attendance(slot: dict, year: int, month: int, day: int,
     if start and end:
         s_h = time_to_hours(start)
         e_h = time_to_hours(end)
-        normal_s = time_to_hours(normal_start)
-        normal_e = time_to_hours(normal_end)
 
         result["기본"] = 8
         result["인정시간"] = 8
 
-        # 지각/조퇴
-        late_hours = max(0, s_h - normal_s)
-        early_leave = max(0, normal_e - e_h) if e_h <= normal_e else 0
-        if late_hours + early_leave > 0:
-            result["지각조퇴"] = -(late_hours + early_leave)
-
-        # 평일 연장
-        if e_h > normal_e:
-            overtime = ot_hours if ot_hours > 0 else (e_h - normal_e)
-            if overtime > 0:
-                result["연장"] = overtime
+        if ot_hours > 0:
+            # 잔업 명시 → 연장 행에 숫자 입력
+            result["연장"] = ot_hours
+        else:
+            # 잔업 명시 없음 → 8h 기준 부족분만 지각조퇴로 입력
+            # (시작 늦거나 종료 늦어도 잔업 자동 계산 X)
+            # 예: 13:30~20:00 → 실근무 5.5h → 부족 2.5h → 지각조퇴 -2 (절삭)
+            actual_hours = max(0, e_h - s_h - 1)  # 점심 1시간 제외
+            capped_actual = min(8, actual_hours)
+            deficit = 8 - capped_actual
+            if deficit > 0.05:
+                # 사용자 양식 기준: 절삭 (2.5 → 2, 4.0 → 4)
+                if deficit == int(deficit):
+                    result["지각조퇴"] = -int(deficit)
+                else:
+                    result["지각조퇴"] = -int(deficit)  # truncation
 
         return result
 
@@ -397,6 +413,7 @@ def calc_weekly_paid_holiday(
     is_employed_in_month: bool = False,
     hire_date: Optional[datetime.date] = None,
     feb_credit: Optional[bool] = None,
+    resign_date: Optional[datetime.date] = None,
 ) -> Dict[int, dict]:
     """
     일요일 주휴 자동 판단.
@@ -444,6 +461,17 @@ def calc_weekly_paid_holiday(
         except ValueError:
             return False
 
+    def is_after_resign(day: int) -> bool:
+        """이 day가 퇴사일 이후인지"""
+        if resign_date is None:
+            return False
+        if day < 1:
+            return False
+        try:
+            return datetime.date(year, month, day) > resign_date
+        except ValueError:
+            return False
+
     # 월의 모든 일요일 수집
     sundays_in_month: List[int] = []
     for day in range(1, 32):
@@ -456,8 +484,8 @@ def calc_weekly_paid_holiday(
     first_sunday = sundays_in_month[0]
 
     for sunday in sundays_in_month:
-        # 게이트 1: 일요일 자체가 입사 전이면 제외
-        if is_before_hire(sunday):
+        # 게이트 1: 일요일 자체가 입사 전 또는 퇴사 후면 제외
+        if is_before_hire(sunday) or is_after_resign(sunday):
             continue
 
         # 그 주 월~금 (일요일 기준 2~6일 전 = 금,목,수,화,월)
@@ -465,8 +493,8 @@ def calc_weekly_paid_holiday(
         weekdays_in_month = [d for d in weekdays if d >= 1 and is_valid_day(year, month, d)]
         weekdays_outside_month_count = 5 - len(weekdays_in_month)
 
-        # 게이트 2: 그 주 평일에 입사 전 날짜가 포함되면 주휴 제외
-        if any(is_before_hire(d) for d in weekdays_in_month):
+        # 게이트 2: 그 주 평일에 입사 전/퇴사 후 날짜가 포함되면 주휴 제외
+        if any(is_before_hire(d) or is_after_resign(d) for d in weekdays_in_month):
             continue
 
         # 다음 주 월요일
@@ -558,6 +586,7 @@ def fill_attendance_sheet(
     overwrite_existing: bool = False,
     hire_dates: Optional[Dict[str, datetime.date]] = None,
     feb_credit_map: Optional[Dict[str, Optional[bool]]] = None,
+    resign_dates: Optional[Dict[str, datetime.date]] = None,
 ) -> dict:
     """
     근태 시트 자동 입력 — 6행 구조, 텍스트는 모두 연장 행에 입력.
@@ -566,11 +595,20 @@ def fill_attendance_sheet(
       hire_dates: {정규화_이름: 입사일}. 입사일 이전 날짜는 자동 입력 X.
       feb_credit_map: {정규화_이름: True/False/None}. 2월 마지막 주 인정 여부.
                        None이면 2월 시트 없거나 직원 못 찾음 → 3/1 주휴 입력 X.
+      resign_dates: {정규화_이름: 퇴사일}. 퇴사일 이후 날짜는 자동 입력 X.
+                    중도퇴사자는 월말 209h 보정 제외.
     """
+    from calendar import monthrange
+
     user_holidays = paid_holidays or {}
     merged_holidays = merge_holidays(year, month, user_holidays)
     hire_dates = hire_dates or {}
     feb_credit_map = feb_credit_map or {}
+    resign_dates = resign_dates or {}
+
+    month_start = datetime.date(year, month, 1)
+    last_day = monthrange(year, month)[1]
+    month_end = datetime.date(year, month, last_day)
 
     wb = load_workbook(excel_path, data_only=False)
     sheet_used = find_target_sheet(wb, month, sheet_name)
@@ -594,8 +632,11 @@ def fill_attendance_sheet(
         "유급수정_잘못된주휴": 0,
         "입사일_확인필요": 0,
         "입사전_자동입력_제외": 0,
+        "퇴사후_자동입력_제외": 0,
         "3월1일_주휴제외": 0,
         "3월2일_유급제외": 0,
+        "월말보정_중도입사자제외": 0,
+        "월말보정_중도퇴사자제외": 0,
     }
 
     for name, days in pdf_data.items():
@@ -610,9 +651,10 @@ def fill_attendance_sheet(
             })
             continue
 
-        # === 입사일 / 2월 인정 정보 조회 ===
+        # === 입사일 / 퇴사일 / 2월 인정 정보 조회 ===
         name_norm = normalize_name(name)
         emp_hire_date: Optional[datetime.date] = hire_dates.get(name_norm)
+        emp_resign_date: Optional[datetime.date] = resign_dates.get(name_norm)
         emp_feb_credit: Optional[bool] = feb_credit_map.get(name_norm)
 
         if emp_hire_date is None:
@@ -624,8 +666,12 @@ def fill_attendance_sheet(
                 "요일": "",
                 "PDF원문": "",
                 "입력값": "",
-                "메시지": "엑셀/PDF 어디서도 입사일을 확인 못함 — 정상 직원으로 가정 (3/1부터 입력)",
+                "메시지": "DB/엑셀/PDF 어디서도 입사일을 확인 못함 — 정상 직원으로 가정",
             })
+
+        # 중도입사자/중도퇴사자 판단
+        is_mid_joiner = emp_hire_date is not None and emp_hire_date > month_start
+        is_mid_leaver = emp_resign_date is not None and emp_resign_date < month_end
 
         classified: Dict[int, dict] = {}
         for day in range(1, 32):
@@ -633,6 +679,7 @@ def fill_attendance_sheet(
             classified[day] = classify_attendance(
                 slot, year, month, day, merged_holidays, normal_start, normal_end,
                 hire_date=emp_hire_date,
+                resign_date=emp_resign_date,
             )
 
         # 입사 전 날짜에 PDF 데이터가 있어도 자동 입력 차단됨 (classify_attendance가 빈 결과 반환)
@@ -695,6 +742,7 @@ def fill_attendance_sheet(
             is_employed_in_month=True,
             hire_date=emp_hire_date,
             feb_credit=emp_feb_credit,
+            resign_date=emp_resign_date,
         )
 
         # 일요일에 PDF 실제 근무가 있으면 주휴 자동 입력 제외
@@ -934,7 +982,38 @@ def fill_attendance_sheet(
                     ),
                 })
 
-        # 월말 주휴 보정 — 31일 옆 (AM=39)
+        # === 월말 주휴 보정 — 31일 옆 (AM=39) ===
+        # 중도입사자/중도퇴사자는 209h 보정 대상 X
+        if is_mid_joiner or is_mid_leaver:
+            if is_mid_joiner:
+                counters["월말보정_중도입사자제외"] += 1
+                review.append({
+                    "구분": "월말보정_제외",
+                    "성명": name,
+                    "일자": "",
+                    "요일": "",
+                    "PDF원문": "",
+                    "입력값": "(미입력)",
+                    "메시지": (
+                        f"중도입사자(입사일 {emp_hire_date}) → 월말 209h 보정 제외"
+                    ),
+                })
+            if is_mid_leaver:
+                counters["월말보정_중도퇴사자제외"] += 1
+                review.append({
+                    "구분": "월말보정_제외",
+                    "성명": name,
+                    "일자": "",
+                    "요일": "",
+                    "PDF원문": "",
+                    "입력값": "(미입력)",
+                    "메시지": (
+                        f"중도퇴사자(퇴사일 {emp_resign_date}) → 월말 209h 보정 제외"
+                    ),
+                })
+            stats[name] = cell_count
+            continue  # 다음 직원으로
+
         adjustment = calc_monthly_adjustment(classified, sundays_filtered, standard_hours)
         if abs(adjustment) > 0.01:
             adj_col = MONTHLY_ADJUSTMENT_COL  # 39 (AM)

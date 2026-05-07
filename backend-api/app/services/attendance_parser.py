@@ -50,15 +50,19 @@ def _match_expected_names_in_tokens(
     expected_names: List[str],
 ) -> List[Tuple[str, float]]:
     """
-    페이지 상단 토큰에서 expected_names를 순서대로 greedy 매칭.
+    페이지 상단 토큰에서 expected_names를 독립적으로 매칭 (search_from 누적 X).
 
     알고리즘:
-      1. 한글 토큰만 추출, 정규화하여 한 줄 문자열 생성
-      2. 각 토큰의 (시작 인덱스, 끝 인덱스, x_center) 기록
-      3. expected_names를 순서대로 normalize 후 문자열 내 검색
-      4. 매칭된 위치에 해당하는 토큰들의 x_center 평균 계산
+      1. 한글 토큰만 추출, x0 정렬하여 한 줄 정규화 문자열 생성
+      2. 긴 이름 우선 (긴 이름이 짧은 이름의 부분일 수 있음 — 예: "박설희" vs "박")
+      3. 각 이름을 독립적으로 모든 occurrence 검색
+      4. 사용된 토큰 범위 추적해서 중복 매칭 방지
+      5. x_center 기준 좌→우 재정렬
 
-    Returns: [(name, x_center), ...]
+    이전 버그: search_from 누적 사용 → PDF 등장 순서와 expected_names 순서 다르면
+    일부 직원 누락. 인보영만 매칭되고 임미정/최혜미/강연수/박설희 누락 사례.
+
+    Returns: [(name, x_center), ...]  — x_center 좌→우 정렬됨
     """
     if not expected_names:
         return []
@@ -72,7 +76,7 @@ def _match_expected_names_in_tokens(
 
     # 2. 토큰별 정규화 텍스트와 인덱스 추적
     parts: List[str] = []
-    token_ranges: List[Tuple[int, int, dict]] = []  # (start_idx, end_idx, token)
+    token_ranges: List[Tuple[int, int, dict]] = []
     cursor = 0
     for tok in han_tokens:
         text = tok["text"].replace(" ", "")
@@ -83,29 +87,47 @@ def _match_expected_names_in_tokens(
         cursor += len(text)
     full_str = "".join(parts)
 
-    # 3. expected_names 순서대로 매칭
-    matched: List[Tuple[str, float]] = []
-    search_from = 0
-    for name in expected_names:
+    # 3. 긴 이름 우선 검색 (4글자 → 3글자 → 2글자)
+    sorted_names = sorted(
+        {n for n in expected_names if normalize_name(n)},
+        key=lambda n: -len(normalize_name(n))
+    )
+
+    # 4. 각 이름을 독립적으로 검색, 사용된 범위 추적
+    used_ranges: List[Tuple[int, int]] = []
+    name_to_x_center: dict = {}
+
+    for name in sorted_names:
         norm_name = normalize_name(name)
         if not norm_name:
             continue
-        idx = full_str.find(norm_name, search_from)
-        if idx < 0:
-            continue
-        idx_end = idx + len(norm_name)
-        # 4. 매칭 범위에 해당하는 토큰들의 x_center 수집
-        x_starts: List[float] = []
-        x_ends: List[float] = []
-        for (ts, te, tok) in token_ranges:
-            # 매칭 범위와 토큰 범위 교집합
-            if ts < idx_end and te > idx:
-                x_starts.append(tok["x0"])
-                x_ends.append(tok["x1"])
-        if x_starts and x_ends:
-            x_center = (min(x_starts) + max(x_ends)) / 2
-            matched.append((name, x_center))
-            search_from = idx_end
+
+        # 모든 occurrence 검색
+        start = 0
+        while True:
+            idx = full_str.find(norm_name, start)
+            if idx < 0:
+                break
+            idx_end = idx + len(norm_name)
+            # 이미 사용된 범위와 겹치면 다음 occurrence 시도
+            overlaps = any(s < idx_end and e > idx for s, e in used_ranges)
+            if not overlaps:
+                used_ranges.append((idx, idx_end))
+                # x_center 계산
+                x_starts: List[float] = []
+                x_ends: List[float] = []
+                for (ts, te, tok) in token_ranges:
+                    if ts < idx_end and te > idx:
+                        x_starts.append(tok["x0"])
+                        x_ends.append(tok["x1"])
+                if x_starts and x_ends:
+                    x_center = (min(x_starts) + max(x_ends)) / 2
+                    name_to_x_center[name] = x_center
+                break
+            start = idx + 1
+
+    # 5. x_center 기준 좌→우 정렬
+    matched = sorted(name_to_x_center.items(), key=lambda p: p[1])
     return matched
 
 

@@ -185,6 +185,131 @@ def merge_hire_dates(
     return merged
 
 
+def extract_employee_info_from_db(
+    wb: Workbook,
+    db_sheet_candidates: Optional[List[str]] = None,
+) -> Dict[str, Dict]:
+    """
+    DB 시트에서 직원별 정보 추출 (입사일/퇴사일/재직여부).
+
+    헤더에서 컬럼명 자동 감지 (성명/이름, 입사일, 퇴사일, 재직여부 등).
+
+    Args:
+      wb: 워크북
+      db_sheet_candidates: 검색할 시트 이름 목록 (기본: ["DB", "직원정보", "사원정보"])
+
+    Returns:
+      { 정규화_이름: {
+            "name": str (원본),
+            "hire_date": date 또는 None,
+            "resign_date": date 또는 None,
+            "status": str 또는 None,
+            "site": str 또는 None,
+        }
+      }
+    """
+    if db_sheet_candidates is None:
+        db_sheet_candidates = ["DB", "db", "직원정보", "사원정보", "직원DB", "근무자정보"]
+
+    NAME_LABELS = {"성명", "이름", "근무자명", "직원명", "사원명", "name", "Name"}
+    HIRE_LABELS = {"입사일", "입사일자", "입사", "입사년월일", "입사 일자", "hire", "hire_date"}
+    RESIGN_LABELS = {"퇴사일", "퇴사일자", "퇴사", "퇴사년월일", "퇴사 일자", "resign", "resign_date"}
+    STATUS_LABELS = {"재직", "재직여부", "상태", "근무상태", "근무 상태", "재직 여부", "status"}
+    SITE_LABELS = {"업체", "현장", "현장명", "업체명", "근무지", "사이트"}
+
+    info_map: Dict[str, Dict] = {}
+
+    target_sheet: Optional[str] = None
+    for cand in db_sheet_candidates:
+        if cand in wb.sheetnames:
+            target_sheet = cand
+            break
+
+    if target_sheet is None:
+        return info_map
+
+    ws = wb[target_sheet]
+
+    # 헤더 행 자동 감지 (1~5행 검사)
+    header_row: Optional[int] = None
+    name_col = hire_col = resign_col = status_col = site_col = None
+
+    for r in range(1, min(8, ws.max_row + 1)):
+        for c in range(1, ws.max_column + 1):
+            v = ws.cell(row=r, column=c).value
+            if not v or not isinstance(v, str):
+                continue
+            vs = v.strip()
+            if vs in NAME_LABELS and name_col is None:
+                name_col = c
+                header_row = r
+            elif vs in HIRE_LABELS and hire_col is None:
+                hire_col = c
+            elif vs in RESIGN_LABELS and resign_col is None:
+                resign_col = c
+            elif vs in STATUS_LABELS and status_col is None:
+                status_col = c
+            elif vs in SITE_LABELS and site_col is None:
+                site_col = c
+        if name_col is not None and (hire_col or resign_col):
+            break
+
+    if name_col is None or header_row is None:
+        return info_map
+
+    # 데이터 행 순회
+    for r in range(header_row + 1, ws.max_row + 1):
+        name_val = ws.cell(row=r, column=name_col).value
+        if not name_val:
+            continue
+        name_str = str(name_val).strip()
+        if not name_str:
+            continue
+        norm = _normalize_name(name_str)
+        if not norm or norm in info_map:
+            continue
+
+        info: Dict = {
+            "name": name_str,
+            "hire_date": None,
+            "resign_date": None,
+            "status": None,
+            "site": None,
+        }
+
+        if hire_col:
+            hv = ws.cell(row=r, column=hire_col).value
+            info["hire_date"] = _parse_date_value(hv)
+        if resign_col:
+            rv = ws.cell(row=r, column=resign_col).value
+            info["resign_date"] = _parse_date_value(rv)
+        if status_col:
+            sv = ws.cell(row=r, column=status_col).value
+            if sv:
+                info["status"] = str(sv).strip()
+        if site_col:
+            stv = ws.cell(row=r, column=site_col).value
+            if stv:
+                info["site"] = str(stv).strip()
+
+        info_map[norm] = info
+
+    return info_map
+
+
+def _parse_date_value(v) -> Optional[datetime.date]:
+    """셀 값을 날짜로 파싱"""
+    if v is None or v == "":
+        return None
+    if isinstance(v, datetime.datetime):
+        return v.date()
+    if isinstance(v, datetime.date):
+        return v
+    if isinstance(v, str):
+        return try_parse_date(v)
+    return None
+
+
 def find_feb_attendance_sheet(wb: Workbook, year: int, march_month: int = 3) -> Optional[str]:
     """근태 (2월) 시트 자동 감지"""
     feb_month = march_month - 1
