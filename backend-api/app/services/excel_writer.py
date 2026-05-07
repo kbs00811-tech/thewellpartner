@@ -42,6 +42,77 @@ def is_formula_cell(cell) -> bool:
     return isinstance(v, str) and v.startswith("=")
 
 
+def safe_set_value_with_protection(
+    ws,
+    row: int,
+    col: int,
+    value,
+    log: list,
+    review: list,
+    employee_name: str,
+    date_str: str,
+    conflict_kind: str,
+) -> bool:
+    """
+    주휴 등 텍스트 입력 시 사용. 기존 값과 충돌하면 덮어쓰지 않고 검토리스트에 남김.
+
+    빈 셀 또는 같은 값이면 입력. 다른 값이 있으면 검토리스트만.
+    수식/병합셀(좌상단 X)은 safe_set_value 와 동일하게 보호됨.
+    """
+    if not row or row < 1:
+        return False
+    cell = ws.cell(row=row, column=col)
+    coord = f"{get_column_letter(col)}{row}"
+
+    # 병합셀 처리
+    if isinstance(cell, MergedCell):
+        target = None
+        for merged in ws.merged_cells.ranges:
+            if cell.coordinate in merged:
+                if cell.coordinate != merged.start_cell.coordinate:
+                    log.append({
+                        "kind": "병합셀_비좌상단",
+                        "sheet": ws.title,
+                        "cell": coord,
+                        "merge_range": str(merged),
+                        "skipped_value": value,
+                    })
+                    return False
+                target = ws.cell(row=merged.min_row, column=merged.min_col)
+                break
+        if target is None:
+            return False
+        cell = target
+
+    # 수식 셀 보호
+    if is_formula_cell(cell):
+        log.append({
+            "kind": "수식셀_보호",
+            "sheet": ws.title,
+            "cell": coord,
+            "formula": cell.value,
+            "skipped_value": value,
+        })
+        return False
+
+    existing = cell.value
+    if existing in (None, "") or existing == value:
+        cell.value = value
+        return True
+
+    # 충돌 — 덮어쓰지 않고 검토리스트만
+    review.append({
+        "구분": conflict_kind,
+        "성명": employee_name,
+        "일자": date_str,
+        "요일": "일",
+        "PDF원문": "",
+        "입력값": f"기존 '{existing}' (덮어쓰지 않음)",
+        "메시지": f"{conflict_kind} — {coord} 기존값 보존, 주휴 미입력",
+    })
+    return False
+
+
 def safe_set_value(ws, row: int, col: int, value, log: list = None) -> bool:
     """
     안전한 셀 입력. 성공 시 True.
@@ -299,15 +370,29 @@ def classify_attendance(slot: dict, year: int, month: int, day: int,
     return result
 
 
-def calc_weekly_paid_holiday(employee_classified: Dict[int, dict],
-                              year: int, month: int) -> Dict[int, float]:
+def calc_weekly_paid_holiday(
+    employee_classified: Dict[int, dict],
+    year: int,
+    month: int,
+    is_employed_in_month: bool = False,
+) -> Dict[int, dict]:
     """
     일요일 주휴 자동 판단.
-    조건: 월~금 5일 모두 근태 인정 + 다음주 월요일 인정.
+
+    Args:
+      is_employed_in_month: 엑셀 근태표에 이 직원이 month 근무자로 등록되어 있는지
+
+    조건:
+      - 일반 일요일: 그 주 월~금 모두 인정 + 다음 주 월요일 인정
+      - 월초 첫 일요일 (예: 3/1): 직전 월~금이 이전 달에 있어 검사 불가하므로
+        직원이 month 근무자이고 첫째 주(첫 일요일~+7일) 안에 인정 항목이 있으면 인정
+      - 월말 마지막 일요일: 다음주 월요일이 다음 달이면 보수적으로 인정
 
     인정 항목: 정상출근(기본>=8) / 연차 / 반차 / 반반차 / 유급
+
+    Returns: { sunday_day: { "hours": 8.0, "reason": str, "auto": True } }
     """
-    sundays_to_pay: Dict[int, float] = {}
+    sundays_to_pay: Dict[int, dict] = {}
 
     def has_credit(day: int) -> bool:
         if day < 1 or day > 31:
@@ -321,41 +406,84 @@ def calc_weekly_paid_holiday(employee_classified: Dict[int, dict],
             return True
         return False
 
+    # 월의 모든 일요일 수집
+    sundays_in_month: List[int] = []
     for day in range(1, 32):
-        if not is_valid_day(year, month, day):
-            continue
-        d = datetime.date(year, month, day)
-        if d.weekday() != 6:
-            continue
+        if is_valid_day(year, month, day) and datetime.date(year, month, day).weekday() == 6:
+            sundays_in_month.append(day)
 
-        weekdays_credit = sum(1 for offset in range(1, 6) if has_credit(day - offset))
+    if not sundays_in_month:
+        return sundays_to_pay
 
-        next_monday = day + 1
-        next_monday_credit = has_credit(next_monday)
+    first_sunday = sundays_in_month[0]
+
+    for sunday in sundays_in_month:
+        # 그 주 월~금 (일요일 기준 2~6일 전 = 금,목,수,화,월)
+        # 일요일-1 = 토요일이므로 제외해야 함
+        weekdays = [sunday - offset for offset in range(2, 7)]
+        weekdays_in_month = [d for d in weekdays if d >= 1 and is_valid_day(year, month, d)]
+        weekdays_outside_month_count = 5 - len(weekdays_in_month)
+
+        # 다음 주 월요일
+        next_monday = sunday + 1
         next_monday_in_month = is_valid_day(year, month, next_monday)
-        next_ok = next_monday_credit or (not next_monday_in_month)
+        next_ok = (not next_monday_in_month) or has_credit(next_monday)
 
-        if weekdays_credit >= 5 and next_ok:
-            sundays_to_pay[day] = 8.0
+        # 케이스 A: 월초 첫 일요일 (직전 평일이 대부분 이전 달)
+        if sunday == first_sunday and weekdays_outside_month_count >= 4:
+            # 첫째 주(첫 일요일 포함 + 7일 안)에 인정 항목 있는지
+            first_week_end = min(sunday + 7, 31)
+            first_week_credit = any(
+                has_credit(d) for d in range(1, first_week_end + 1)
+                if is_valid_day(year, month, d)
+            )
+            if is_employed_in_month and first_week_credit:
+                sundays_to_pay[sunday] = {
+                    "hours": 8.0,
+                    "reason": "월초 첫 일요일 — 직원 month 근무자 + 첫째 주 인정 활동 → 주휴",
+                    "auto": True,
+                }
+            continue
+
+        # 케이스 B: 일반 일요일 — 그 주 month 안 평일 모두 인정 + 다음 주 월요일 인정
+        weekdays_credit_count = sum(1 for d in weekdays_in_month if has_credit(d))
+        if (
+            weekdays_in_month
+            and weekdays_credit_count == len(weekdays_in_month)
+            and next_ok
+        ):
+            sundays_to_pay[sunday] = {
+                "hours": 8.0,
+                "reason": (
+                    f"월~금 {weekdays_credit_count}일 모두 인정 + "
+                    f"{'다음주 월요일 인정' if next_monday_in_month else '다음달 월요일 (보수적 인정)'} → 주휴"
+                ),
+                "auto": True,
+            }
 
     return sundays_to_pay
 
 
 def calc_monthly_adjustment(employee_classified: Dict[int, dict],
-                             sundays_paid: Dict[int, float],
+                             sundays_paid,
                              standard_hours: int = 209) -> float:
     """
     월말 주휴 보정 = 209 - 월합산_인정시간.
 
     인정시간 = 평일 기본근무(8) + 연차/반차/반반차/유급(8) + 일요일 주휴(8)
-    제외 = 평일 연장 + 주말 연장(특근 자리에 들어간 것 포함) + 심야 + 특잔
+    제외 = 평일 연장 + 주말 연장 + 심야 + 특근 + 특잔 + 지각조퇴
+
+    sundays_paid: dict[day, float] 또는 dict[day, {"hours": float, ...}]
     """
     total = 0.0
     for day, c in employee_classified.items():
         rec = c.get("인정시간", 0)
         total += rec
-    for hrs in sundays_paid.values():
-        total += hrs
+    for v in sundays_paid.values():
+        if isinstance(v, dict):
+            total += v.get("hours", 0)
+        else:
+            total += v
     return standard_hours - total
 
 
@@ -392,6 +520,8 @@ def fill_attendance_sheet(
         "주휴_자동입력": 0,
         "연장_텍스트_충돌": 0,
         "일요일주휴_제외": 0,
+        "주휴_기본칸_충돌": 0,
+        "주휴_표기칸_충돌": 0,
     }
 
     for name, days in pdf_data.items():
@@ -413,11 +543,14 @@ def fill_attendance_sheet(
                 slot, year, month, day, merged_holidays, normal_start, normal_end
             )
 
-        sundays = calc_weekly_paid_holiday(classified, year, month)
+        # 직원이 매칭됐으니 month 근무자로 등록된 것 → 3/1 같은 월초 주휴 판단 가능
+        sundays = calc_weekly_paid_holiday(
+            classified, year, month, is_employed_in_month=True
+        )
 
         # 일요일에 PDF 실제 근무가 있으면 주휴 자동 입력 제외
-        sundays_filtered: Dict[int, float] = {}
-        for sday, hrs in sundays.items():
+        sundays_filtered: Dict[int, dict] = {}
+        for sday, info in sundays.items():
             sunday_c = classified.get(sday, {})
             if sunday_c.get("연장", 0) > 0:
                 counters["일요일주휴_제외"] += 1
@@ -435,7 +568,7 @@ def fill_attendance_sheet(
                     "메시지": "일요일 PDF 실제 근무 발견 → 주휴 자동 입력 제외",
                 })
             else:
-                sundays_filtered[sday] = hrs
+                sundays_filtered[sday] = info
 
         # 주휴를 인정시간 합계에 반영하기 위해 sundays_filtered 사용
         cell_count = 0
@@ -538,23 +671,44 @@ def fill_attendance_sheet(
                     cell_count += 1
 
         # 일요일 주휴 입력 — 기본 행에 8 + 연장 행에 "주휴"
-        for sday, hrs in sundays_filtered.items():
-            scol = 7 + sday
-            # 기본 행
-            if safe_set_value(ws, block["기본"], scol, hrs, log):
+        # 기존 값과 충돌 시 덮어쓰지 않고 검토리스트에 남김
+        for sday, info in sundays_filtered.items():
+            scol = 7 + sday  # day=1 → col=8(H), day=8 → col=15(O), day=29 → col=36(AJ)
+            hrs = info["hours"]
+            reason = info["reason"]
+            date_str = f"{year}-{month:02d}-{sday:02d}"
+
+            # 기본 칸 (8) — 보호 모드
+            basic_ok = safe_set_value_with_protection(
+                ws, block["기본"], scol, hrs, log, review,
+                employee_name=name, date_str=date_str,
+                conflict_kind="주휴_기본칸_충돌",
+            )
+            if basic_ok:
                 cell_count += 1
-            # 연장 행에 "주휴" 텍스트
-            if safe_set_value(ws, block["연장"], scol, "주휴", log):
+            else:
+                counters["주휴_기본칸_충돌"] += 1
+
+            # 연장 칸 ("주휴") — 보호 모드
+            note_ok = safe_set_value_with_protection(
+                ws, block["연장"], scol, "주휴", log, review,
+                employee_name=name, date_str=date_str,
+                conflict_kind="주휴_표기칸_충돌",
+            )
+            if note_ok:
                 cell_count += 1
+            else:
+                counters["주휴_표기칸_충돌"] += 1
+
             counters["주휴_자동입력"] += 1
             review.append({
                 "구분": "주휴_자동입력",
                 "성명": name,
-                "일자": f"{year}-{month:02d}-{sday:02d}",
+                "일자": date_str,
                 "요일": "일",
                 "PDF원문": "",
-                "입력값": "기본 8 + 연장행 '주휴'",
-                "메시지": "월~금 5일 모두 인정 + 다음주 월요일 인정 → 주휴 8h",
+                "입력값": f"기본 {hrs} + 연장행 '주휴'",
+                "메시지": reason,
             })
 
         # 월말 주휴 보정 — 31일 옆 (AM=39)
