@@ -3,7 +3,6 @@
 POST /api/attendance/process
 """
 from __future__ import annotations
-import io
 import json
 import shutil
 import tempfile
@@ -14,7 +13,12 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header, Re
 from openpyxl import load_workbook
 
 from ..services.attendance_parser import parse_pdf
-from ..services.excel_writer import fill_attendance_sheet, classify_attendance
+from ..services.excel_writer import (
+    fill_attendance_sheet,
+    classify_attendance,
+    extract_employee_names_from_sheet,
+    find_target_sheet,
+)
 from ..services.leave_writer import fill_leave_sheet
 from ..services.validator import validate, write_validation_to_review
 from ..auth import verify_admin_token
@@ -50,8 +54,8 @@ async def process_attendance(
     sheet_name: Optional[str] = Form(None),
     leave_sheet_name: str = Form("연차내역"),
     overwrite_existing: bool = Form(False),
-    fill_leave: bool = Form(False),  # 이번 단계: 연차내역 시트 미입력
-    enforce_pdf_month: bool = Form(True),  # PDF month와 user month 불일치 시 PDF 기준 사용
+    fill_leave: bool = Form(False),
+    enforce_pdf_month: bool = Form(True),
     x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
     authorization: Optional[str] = Header(None),
 ):
@@ -59,9 +63,13 @@ async def process_attendance(
     PDF 출근부 + 청구 엑셀 → 근태 자동 입력된 엑셀 반환.
     수식/서식은 100% 보존.
 
-    응답:
-      - 헤더 X-Process-Result: JSON 통계 (utf-8 hex 인코딩)
-      - 본문: 완성 엑셀 바이너리
+    처리 순서:
+      1. 엑셀 직원명 목록 미리 추출 (ground truth)
+      2. PDF 파싱 — 직원명 매칭 + 날짜 시퀀스 보정
+      3. PDF month vs user month 검증 (PDF 우선)
+      4. 근태 시트 자동 입력
+      5. 검증 + 검토리스트 작성
+      6. 결과 엑셀 반환
     """
     verify_admin_token(x_admin_token, authorization)
 
@@ -84,16 +92,29 @@ async def process_attendance(
         with open(excel_orig_path, "wb") as f:
             f.write(await excel.read())
 
-        # 1. PDF 파싱
+        # 1. 엑셀 직원명 목록 추출 (PDF 파싱 ground truth)
+        excel_names: list[str] = []
         try:
-            pdf_data, meta = parse_pdf(str(pdf_path))
+            wb_pre = load_workbook(str(excel_orig_path), data_only=False, read_only=False)
+            try:
+                pre_sheet = find_target_sheet(wb_pre, month, sheet_name_final)
+                excel_names = extract_employee_names_from_sheet(wb_pre, pre_sheet)
+            finally:
+                wb_pre.close()
+        except Exception as e:
+            # 직원명 사전 추출 실패는 치명적이지 않음 — 폴백 알고리즘 사용
+            excel_names = []
+
+        # 2. PDF 파싱
+        try:
+            pdf_data, meta = parse_pdf(str(pdf_path), expected_names=excel_names)
         except Exception as e:
             raise HTTPException(422, f"PDF 파싱 실패: {e}")
 
         if not pdf_data:
             raise HTTPException(422, "PDF에서 직원 정보를 찾지 못했습니다.")
 
-        # 1.5. PDF month/year vs user month/year 일관성 검증
+        # 3. PDF month/year 일관성 검증
         pdf_month = meta.get("month")
         pdf_year = meta.get("year")
         target_year = year
@@ -110,10 +131,9 @@ async def process_attendance(
             if pdf_year:
                 target_year = pdf_year
 
-        # 2. 원본 복사
+        # 4. 원본 복사 후 수정
         shutil.copyfile(excel_orig_path, excel_out_path)
 
-        # 3. 근태 입력 (단일 wb로 모든 작업 수행)
         try:
             att_result = fill_attendance_sheet(
                 str(excel_out_path),
@@ -133,7 +153,7 @@ async def process_attendance(
         wb = att_result["wb"]
         leave_result = {"stats": {}, "missing": [], "review_list": []}
 
-        # 4. 연차 입력 (옵션, 기본 비활성화)
+        # 5. 연차 입력 (옵션)
         if fill_leave:
             classified_per_employee = {}
             for name, days in pdf_data.items():
@@ -155,13 +175,10 @@ async def process_attendance(
                 sheet_name=leave_sheet_name,
             )
 
-        # 5. 검증 — 원본과 현재 wb 비교
-        # 검증을 위해 임시 저장 → load → 검증 → 검토리스트 추가 → 최종 save
-        # (단일 save를 위해 메모리상 wb 사용)
+        # 6. 1차 저장 → 검증 → 검토리스트 추가 → 최종 저장
         wb.save(str(excel_out_path))
         validation = validate(str(excel_orig_path), str(excel_out_path))
 
-        # 6. 검토리스트 시트 추가 (한 번 더 load → 검토리스트 append → 최종 save)
         wb_final = load_workbook(str(excel_out_path), data_only=False)
         write_validation_to_review(wb_final, validation)
 
@@ -179,13 +196,50 @@ async def process_attendance(
             ws_review.append(["기준시간", str(standard_hours)])
             ws_review.append(["정상출근", normal_start])
             ws_review.append(["정상퇴근", normal_end])
+            ws_review.append(["엑셀직원명_추출수", str(len(excel_names))])
+            ws_review.append(["PDF매칭직원수", str(len(meta.get("matched_employees", [])))])
 
-            # 적용된 공휴일
+            # 카운터 요약 (반드시 0이어야 하는 항목)
             ws_review.append([])
-            ws_review.append(["적용 공휴일"])
+            ws_review.append(["카운터 요약 (0이면 성공)"])
+            ws_review.append(["항목", "건수"])
+            counters = att_result.get("counters", {})
+            for k in ["직원_매칭실패", "비고행_없음", "수식셀_덮어쓰기"]:
+                ws_review.append([k, str(counters.get(k, 0))])
+            ws_review.append([])
+            ws_review.append(["기타 카운터"])
+            for k in ["주말근무_연장행입력", "공휴일_유급_입력", "주휴_자동입력"]:
+                ws_review.append([k, str(counters.get(k, 0))])
+
+            # 적용 공휴일
+            ws_review.append([])
+            ws_review.append(["적용 공휴일 (자동 + 사용자 입력)"])
             ws_review.append(["일자", "이름"])
             for date_str, hname in sorted(att_result["merged_holidays"].items()):
                 ws_review.append([date_str, hname])
+
+            # PDF 날짜 보정 내역
+            day_corrections = meta.get("day_corrections", [])
+            if day_corrections:
+                ws_review.append([])
+                ws_review.append(["PDF 날짜 시퀀스 보정 (raw → corrected)"])
+                ws_review.append(["페이지", "raw_day", "corrected_day", "context"])
+                for c in day_corrections:
+                    ws_review.append([
+                        str(c.get("page", "")),
+                        str(c.get("raw", "")),
+                        str(c.get("corrected", "")),
+                        c.get("context", "")
+                    ])
+
+            # PDF 파싱 경고
+            parse_warnings = meta.get("parse_warnings", [])
+            if parse_warnings:
+                ws_review.append([])
+                ws_review.append(["PDF 파싱 경고"])
+                ws_review.append(["페이지", "메시지"])
+                for w in parse_warnings:
+                    ws_review.append([str(w.get("page", "")), w.get("msg", "")])
 
             # 근태 입력 검토
             ws_review.append([])
@@ -199,7 +253,19 @@ async def process_attendance(
                     r.get("메시지", "")
                 ])
 
-            # 연차 입력 검토 (옵션)
+            # 수식 셀 보호 로그
+            log = att_result.get("log", [])
+            formula_protect = [e for e in log if e.get("kind") == "수식셀_보호"]
+            if formula_protect:
+                ws_review.append([])
+                ws_review.append(["수식 셀 보호 로그 (덮어쓰지 않고 건너뜀)"])
+                ws_review.append(["시트", "셀", "수식", "건너뛴값"])
+                for e in formula_protect[:100]:
+                    ws_review.append([
+                        e.get("sheet", ""), e.get("cell", ""),
+                        e.get("formula", ""), str(e.get("skipped_value", "")),
+                    ])
+
             if fill_leave and leave_result.get("review_list"):
                 ws_review.append([])
                 ws_review.append(["연차 입력 검토"])
@@ -221,6 +287,8 @@ async def process_attendance(
                 "month": meta.get("month"),
                 "total_employees": meta.get("total_employees"),
                 "raw_pages": meta.get("raw_pages"),
+                "day_corrections": len(meta.get("day_corrections", [])),
+                "matched_employees": len(meta.get("matched_employees", [])),
             },
             "target": {
                 "year": target_year,
@@ -232,6 +300,7 @@ async def process_attendance(
                 "filled_employees": len(att_result["stats"]),
                 "total_cells": sum(att_result["stats"].values()),
                 "missing": att_result["missing"],
+                "counters": att_result.get("counters", {}),
             },
             "leave": {
                 "filled_employees": len(leave_result.get("stats", {})),
