@@ -204,11 +204,17 @@ async def process_attendance(
             ws_review.append(["카운터 요약 (0이면 성공)"])
             ws_review.append(["항목", "건수"])
             counters = att_result.get("counters", {})
-            for k in ["직원_매칭실패", "비고행_없음", "수식셀_덮어쓰기"]:
+            for k in ["직원_매칭실패", "수식셀_덮어쓰기"]:
                 ws_review.append([k, str(counters.get(k, 0))])
             ws_review.append([])
             ws_review.append(["기타 카운터"])
-            for k in ["주말근무_연장행입력", "공휴일_유급_입력", "주휴_자동입력"]:
+            for k in [
+                "주말근무_연장행입력",
+                "공휴일_유급_입력",
+                "주휴_자동입력",
+                "연장_텍스트_충돌",
+                "일요일주휴_제외",
+            ]:
                 ws_review.append([k, str(counters.get(k, 0))])
 
             # 적용 공휴일
