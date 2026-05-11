@@ -75,7 +75,7 @@ async def process_attendance(
     leave_sheet_name: str = Form("연차내역"),
     overwrite_existing: bool = Form(False),
     fill_leave: bool = Form(False),
-    enforce_pdf_month: bool = Form(True),
+    enforce_pdf_month: bool = Form(False),  # 사용자 입력 강제 우선
     x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
     authorization: Optional[str] = Header(None),
 ):
@@ -311,7 +311,9 @@ async def process_attendance(
         validation = validate(str(excel_orig_path), str(excel_out_path))
         _log(f"  validate done — ok={validation.get('ok')} [{time.time()-t0:.1f}s]")
 
-        wb_final = load_workbook(str(excel_out_path), data_only=False)
+        # 두 번째 load_workbook 제거 — 같은 wb 객체 재사용 (시간 절약)
+        _log(f"  reuse wb (no second load) [{time.time()-t0:.1f}s]")
+        wb_final = wb  # ← 두 번째 load 제거. 큰 파일에서 10~20초 단축
         write_validation_to_review(wb_final, validation)
 
         if "자동입력_검토리스트" in wb_final.sheetnames:
