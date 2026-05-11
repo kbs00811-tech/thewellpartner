@@ -264,21 +264,90 @@ def parse_pdf(
             # === 직원명 파싱 ===
             employee_names: List[str] = []
             employee_x_centers: List[float] = []
+            page_text_full = page.extract_text() or ""
 
-            # 1순위: expected_names로 ground truth 매칭
+            # 1순위: expected_names로 ground truth 매칭 (페이지 전체 토큰)
             if expected_names:
-                # 페이지 상단 첫 8행의 모든 토큰 모아서 매칭
-                top_tokens: List[dict] = []
-                for top, row in rows[:8]:
-                    top_tokens.extend(row)
-                matched = _match_expected_names_in_tokens(top_tokens, expected_names)
+                # rows[:8] 제한 → 페이지 전체 토큰 (직원명이 8행 밖에 있어도 매칭)
+                all_tokens: List[dict] = []
+                for top, row in rows:
+                    all_tokens.extend(row)
+                matched = _match_expected_names_in_tokens(all_tokens, expected_names)
                 if len(matched) >= 1:
                     employee_names = [n for n, _ in matched]
                     employee_x_centers = [x for _, x in matched]
                     meta["matched_employees"].extend(employee_names)
 
-            # 2순위: 폴백 — 기존 알고리즘 (2~4글자 한글 그룹핑)
-            if not employee_names:
+                meta.setdefault("debug", []).append({
+                    "page": page_idx + 1,
+                    "expected_count": len(expected_names),
+                    "matched_count": len(matched),
+                    "matched_names": [n for n, _ in matched],
+                })
+
+            # 1.5순위: 엘티와이 양식 강제 폴백 ("N월 출근부" 헤더)
+            # 페이지 인덱스 × 5 기반으로 expected_names 슬라이싱 → 5명 강제 배정
+            LTY_RE = re.compile(r"\d+\s*월\s*출근부")
+            is_lty = bool(LTY_RE.search(page_text_full))
+            if (
+                expected_names
+                and is_lty
+                and len(employee_names) < min(5, len(expected_names) - page_idx * 5)
+            ):
+                page_start = page_idx * 5
+                page_end = min(page_start + 5, len(expected_names))
+                if page_end > page_start:
+                    form_employees = expected_names[page_start:page_end]
+                    # 시간 토큰 클러스터링으로 좌표 추정
+                    time_x_centers: List[float] = []
+                    for top, row in rows:
+                        if not row:
+                            continue
+                        first_text = row[0]["text"].strip()
+                        try:
+                            dval = int(first_text)
+                            if not (1 <= dval <= 31):
+                                continue
+                        except ValueError:
+                            continue
+                        for t in row[1:]:
+                            if TIME_RE.match(t.get("text", "").strip()):
+                                time_x_centers.append((t["x0"] + t["x1"]) / 2)
+
+                    n_emp = len(form_employees)
+                    cluster_centers: List[float] = []
+                    if time_x_centers and n_emp >= 2:
+                        time_x_centers.sort()
+                        gaps = [
+                            (time_x_centers[i + 1] - time_x_centers[i], i)
+                            for i in range(len(time_x_centers) - 1)
+                        ]
+                        gaps.sort(reverse=True)
+                        boundaries = sorted(g[1] for g in gaps[: n_emp - 1])
+                        clusters = []
+                        prev = 0
+                        for b in boundaries:
+                            clusters.append(time_x_centers[prev: b + 1])
+                            prev = b + 1
+                        clusters.append(time_x_centers[prev:])
+                        cluster_centers = [sum(c) / len(c) for c in clusters if c]
+                    # 폴백 좌표 (사용자 명시값)
+                    if len(cluster_centers) < n_emp:
+                        cluster_centers = [128.4, 225.6, 322.7, 419.9, 517.2][:n_emp]
+
+                    employee_names = list(form_employees)
+                    employee_x_centers = cluster_centers[:n_emp]
+                    for nm in form_employees:
+                        if nm not in meta["matched_employees"]:
+                            meta["matched_employees"].append(nm)
+                    meta["debug"].append({
+                        "page": page_idx + 1,
+                        "fallback": "lty_form_strict",
+                        "form_employees": form_employees,
+                    })
+
+            # 2순위: 그래도 안 되면 — 기존 폴백 (KOREAN_RE 그룹핑, 단 expected_names 없을 때만)
+            if not employee_names and not expected_names:
                 for top, row in rows[:8]:
                     names_in_row: List[Tuple[str, float]] = []
                     i = 0
