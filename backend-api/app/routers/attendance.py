@@ -6,8 +6,17 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+import time
+import sys
+import traceback
 from pathlib import Path
 from typing import Optional
+
+
+def _log(msg: str):
+    """진행 단계 로그 — Render Logs에서 실시간 확인"""
+    print(f"[ATTENDANCE] {msg}", flush=True)
+    sys.stdout.flush()
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Header, Response
 from openpyxl import load_workbook
@@ -92,18 +101,28 @@ async def process_attendance(
     user_holidays = _parse_holidays(holidays)
     sheet_name_final = sheet_name.strip() if sheet_name and sheet_name.strip() else None
 
+    t0 = time.time()
+    _log(f"=== START process_attendance year={year} month={month} ===")
+
     tmp_dir = Path(tempfile.mkdtemp(prefix="attendance_"))
     try:
+      try:
         pdf_path = tmp_dir / pdf.filename
         excel_orig_path = tmp_dir / excel.filename
         excel_out_path = tmp_dir / excel.filename.replace(
             ".xlsx", "_근태자동입력_수정완료.xlsx"
         )
 
+        _log(f"Step 1: file upload start")
+        pdf_bytes = await pdf.read()
+        excel_bytes = await excel.read()
+        _log(f"  PDF: {len(pdf_bytes)/1024:.1f} KB, Excel: {len(excel_bytes)/1024:.1f} KB")
+
         with open(pdf_path, "wb") as f:
-            f.write(await pdf.read())
+            f.write(pdf_bytes)
         with open(excel_orig_path, "wb") as f:
-            f.write(await excel.read())
+            f.write(excel_bytes)
+        _log(f"Step 1 done [{time.time()-t0:.1f}s]")
 
         # 1. 엑셀 사전 로드 — DB 시트 + 직원명 + 입사일 + 2월 시트
         excel_names: list[str] = []
@@ -113,14 +132,19 @@ async def process_attendance(
         feb_sheet_name: Optional[str] = None
         feb_credit_map: dict = {}
 
+        _log("Step 2: Excel pre-load (find_target_sheet + extract names + DB)")
         try:
             wb_pre = load_workbook(str(excel_orig_path), data_only=False, read_only=False)
             try:
+                _log(f"  sheetnames: {wb_pre.sheetnames}")
                 march_sheet = find_target_sheet(wb_pre, month, sheet_name_final)
+                _log(f"  march_sheet: {march_sheet}")
                 excel_names = extract_employee_names_from_sheet(wb_pre, march_sheet)
+                _log(f"  excel_names: {len(excel_names)}명")
 
                 # DB 시트에서 입사일/퇴사일/재직여부 추출 (최우선)
                 db_info = extract_employee_info_from_db(wb_pre)
+                _log(f"  db_info: {len(db_info)}명")
 
                 # 엑셀 시트에서 입사일 보완
                 candidate_sheets = [march_sheet]
@@ -141,6 +165,7 @@ async def process_attendance(
 
                 # 2월 시트
                 feb_sheet_name = find_feb_attendance_sheet(wb_pre, year, month)
+                _log(f"  feb_sheet: {feb_sheet_name}")
                 if feb_sheet_name:
                     for nm in excel_names:
                         result_check = check_feb_last_week_credit(
@@ -151,16 +176,24 @@ async def process_attendance(
                         feb_credit_map[nm] = result_check
             finally:
                 wb_pre.close()
-        except Exception:
+        except Exception as e:
+            _log(f"Step 2 ERROR: {type(e).__name__}: {e}")
+            _log(traceback.format_exc())
             excel_names = []
             hire_dates_excel = {}
             resign_dates_db = {}
+        _log(f"Step 2 done [{time.time()-t0:.1f}s]")
 
         # 2. PDF 파싱
+        _log("Step 3: PDF parsing")
         try:
             pdf_data, meta = parse_pdf(str(pdf_path), expected_names=excel_names)
+            _log(f"  pdf_data: {len(pdf_data)}명, pages: {meta.get('raw_pages')}")
         except Exception as e:
+            _log(f"Step 3 ERROR: {type(e).__name__}: {e}")
+            _log(traceback.format_exc())
             raise HTTPException(422, f"PDF 파싱 실패: {e}")
+        _log(f"Step 3 done [{time.time()-t0:.1f}s]")
 
         if not pdf_data:
             raise HTTPException(422, "PDF에서 직원 정보를 찾지 못했습니다.")
@@ -187,6 +220,7 @@ async def process_attendance(
         hire_dates = merge_hire_dates(hire_dates_excel, hire_dates_pdf)
 
         # 5. 원본 복사 후 수정
+        _log(f"Step 5: copy + fill_attendance_sheet (year={target_year}, month={target_month})")
         shutil.copyfile(excel_orig_path, excel_out_path)
 
         try:
@@ -205,8 +239,15 @@ async def process_attendance(
                 feb_credit_map=feb_credit_map,
                 resign_dates=resign_dates_db,
             )
+            _log(f"  fill_attendance_sheet done — stats: {len(att_result.get('stats', {}))}명")
         except ValueError as e:
+            _log(f"Step 5 ValueError: {e}")
             raise HTTPException(422, str(e))
+        except Exception as e:
+            _log(f"Step 5 ERROR: {type(e).__name__}: {e}")
+            _log(traceback.format_exc())
+            raise HTTPException(500, f"근태 입력 실패: {type(e).__name__}: {e}")
+        _log(f"Step 5 done [{time.time()-t0:.1f}s]")
 
         wb = att_result["wb"]
         leave_result = {"stats": {}, "missing": [], "review_list": []}
@@ -264,8 +305,11 @@ async def process_attendance(
         )
 
         # 8. 1차 저장 + 검증 + 검토리스트 추가
+        _log(f"Step 8: wb.save + validate")
         wb.save(str(excel_out_path))
+        _log(f"  wb.save done [{time.time()-t0:.1f}s]")
         validation = validate(str(excel_orig_path), str(excel_out_path))
+        _log(f"  validate done — ok={validation.get('ok')} [{time.time()-t0:.1f}s]")
 
         wb_final = load_workbook(str(excel_out_path), data_only=False)
         write_validation_to_review(wb_final, validation)
@@ -434,10 +478,13 @@ async def process_attendance(
                         r.get("구분", ""), r.get("성명", ""), r.get("메시지", "")
                     ])
 
+        _log(f"Step 9: wb_final.save")
         wb_final.save(str(excel_out_path))
+        _log(f"  wb_final.save done [{time.time()-t0:.1f}s]")
 
         with open(excel_out_path, "rb") as f:
             content = f.read()
+        _log(f"Step 10: response build — content size={len(content)/1024:.1f} KB [{time.time()-t0:.1f}s]")
 
         result_summary = {
             "pdf_meta": {
@@ -489,6 +536,7 @@ async def process_attendance(
         ascii_fallback = "result.xlsx"
         utf8_filename = quote(out_filename, safe="")
 
+        _log(f"=== SUCCESS — total {time.time()-t0:.1f}s ===")
         return Response(
             content=content,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -498,6 +546,12 @@ async def process_attendance(
                 "Access-Control-Expose-Headers": "X-Process-Result, Content-Disposition",
             },
         )
+      except HTTPException:
+        raise
+      except Exception as e:
+        _log(f"=== UNEXPECTED ERROR at {time.time()-t0:.1f}s: {type(e).__name__}: {e} ===")
+        _log(traceback.format_exc())
+        raise HTTPException(500, f"처리 중 예기치 못한 에러: {type(e).__name__}: {e}")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
