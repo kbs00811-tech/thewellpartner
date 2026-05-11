@@ -45,52 +45,68 @@ def diff_hours(start: str, end: str) -> float:
     return max(0, e - s - 1)
 
 
+def _extract_korean_only(text: str) -> str:
+    """텍스트에서 한글 문자만 추출 (공백/숫자/특수문자/\\xa0 등 모두 무시)"""
+    if not text:
+        return ""
+    return ''.join(c for c in text if '가' <= c <= '힣')
+
+
 def _match_expected_names_in_tokens(
     tokens: List[dict],
     expected_names: List[str],
 ) -> List[Tuple[str, float]]:
     """
-    페이지 상단 토큰에서 expected_names를 독립적으로 매칭 (search_from 누적 X).
+    토큰들에서 expected_names를 한글 whitelist 방식으로 강건하게 매칭.
 
     알고리즘:
-      1. 한글 토큰만 추출, x0 정렬하여 한 줄 정규화 문자열 생성
-      2. 긴 이름 우선 (긴 이름이 짧은 이름의 부분일 수 있음 — 예: "박설희" vs "박")
-      3. 각 이름을 독립적으로 모든 occurrence 검색
-      4. 사용된 토큰 범위 추적해서 중복 매칭 방지
-      5. x_center 기준 좌→우 재정렬
+      1. 모든 토큰에서 한글만 추출 (whitelist) — 공백/숫자/특수문자/non-breaking space 무시
+      2. (top, x0) 2차원 정렬 — 두 줄 분산도 처리
+      3. 긴 이름 우선, 독립 검색, used_ranges 추적
+      4. x_center 좌→우 재정렬
 
-    이전 버그: search_from 누적 사용 → PDF 등장 순서와 expected_names 순서 다르면
-    일부 직원 누락. 인보영만 매칭되고 임미정/최혜미/강연수/박설희 누락 사례.
+    fcd6f8a 시점 버그:
+      KOREAN_RE = ^[가-힣]+$ 로 토큰 통째로 검사 후 replace(" ") 만 처리.
+      "박 설희" 같이 토큰이 분리되거나 \\xa0 같은 특수 공백 있으면 누락.
+      → "인보영박, 설희" 같은 깨짐 발생.
 
-    Returns: [(name, x_center), ...]  — x_center 좌→우 정렬됨
+    Returns: [(name, x_center), ...]
     """
     if not expected_names:
         return []
 
-    # 1. 한글 토큰만 추출
-    han_tokens = [t for t in tokens if KOREAN_RE.match(t["text"].replace(" ", ""))]
-    han_tokens.sort(key=lambda t: t["x0"])
+    # 1. 한글이 포함된 모든 토큰 추출 + 한글만 뽑기
+    han_tokens = []
+    for t in tokens:
+        kor = _extract_korean_only(t.get("text", ""))
+        if kor:
+            han_tokens.append({
+                "x0": t["x0"],
+                "x1": t["x1"],
+                "top": t.get("top", 0),
+                "kor": kor,
+            })
 
     if not han_tokens:
         return []
 
-    # 2. 토큰별 정규화 텍스트와 인덱스 추적
+    # 2. (top, x0) 정렬 — 두 줄 분산 케이스 처리
+    han_tokens.sort(key=lambda t: (round(t.get("top", 0)), t["x0"]))
+
     parts: List[str] = []
     token_ranges: List[Tuple[int, int, dict]] = []
     cursor = 0
     for tok in han_tokens:
-        text = tok["text"].replace(" ", "")
-        if not text:
-            continue
-        parts.append(text)
-        token_ranges.append((cursor, cursor + len(text), tok))
-        cursor += len(text)
+        kor = tok["kor"]
+        parts.append(kor)
+        token_ranges.append((cursor, cursor + len(kor), tok))
+        cursor += len(kor)
     full_str = "".join(parts)
 
-    # 3. 긴 이름 우선 검색 (4글자 → 3글자 → 2글자)
+    # 3. 긴 이름 우선 검색
     sorted_names = sorted(
-        {n for n in expected_names if normalize_name(n)},
-        key=lambda n: -len(normalize_name(n))
+        {n for n in expected_names if _extract_korean_only(n)},
+        key=lambda n: -len(_extract_korean_only(n))
     )
 
     # 4. 각 이름을 독립적으로 검색, 사용된 범위 추적
@@ -98,7 +114,7 @@ def _match_expected_names_in_tokens(
     name_to_x_center: dict = {}
 
     for name in sorted_names:
-        norm_name = normalize_name(name)
+        norm_name = _extract_korean_only(name)
         if not norm_name:
             continue
 
