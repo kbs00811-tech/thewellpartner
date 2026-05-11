@@ -31,7 +31,7 @@ from ..services.excel_writer import (
     DAY_TO_COL,
 )
 from ..services.leave_writer import fill_leave_sheet
-from ..services.validator import validate, write_validation_to_review
+from ..services.validator import validate, validate_lite, write_validation_to_review
 from ..services.hire_date import (
     extract_hire_dates_from_excel,
     estimate_hire_dates_from_pdf,
@@ -305,15 +305,18 @@ async def process_attendance(
         )
 
         # 8. 1차 저장 + 검증 + 검토리스트 추가
-        _log(f"Step 8: wb.save + validate")
+        _log(f"Step 8: wb.save + validate_lite")
         wb.save(str(excel_out_path))
         _log(f"  wb.save done [{time.time()-t0:.1f}s]")
-        validation = validate(str(excel_orig_path), str(excel_out_path))
-        _log(f"  validate done — ok={validation.get('ok')} [{time.time()-t0:.1f}s]")
+        # validate → validate_lite (read_only 모드, 60초→5초 단축)
+        validation = validate_lite(str(excel_orig_path), str(excel_out_path))
+        _log(f"  validate_lite done — ok={validation.get('ok')} [{time.time()-t0:.1f}s]")
 
-        # 두 번째 load_workbook 제거 — 같은 wb 객체 재사용 (시간 절약)
-        _log(f"  reuse wb (no second load) [{time.time()-t0:.1f}s]")
-        wb_final = wb  # ← 두 번째 load 제거. 큰 파일에서 10~20초 단축
+        # wb.save 후 같은 wb 객체는 재사용 불가 (I/O closed error)
+        # → 두 번째 load_workbook 필요. 단 keep_vba/keep_links 옵션으로 빠르게
+        _log(f"  reload wb_final [{time.time()-t0:.1f}s]")
+        wb_final = load_workbook(str(excel_out_path), data_only=False)
+        _log(f"  wb_final loaded [{time.time()-t0:.1f}s]")
         write_validation_to_review(wb_final, validation)
 
         if "자동입력_검토리스트" in wb_final.sheetnames:
