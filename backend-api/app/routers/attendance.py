@@ -61,6 +61,26 @@ def _parse_holidays(holidays_text: str) -> dict:
     return result
 
 
+def _diagnose_workbook(path: str) -> list:
+    """양식 파일의 시트별 max_row 진단 정보 (로그용).
+    1만 행 넘는 시트가 있으면 OOM 위험 신호.
+    """
+    out = []
+    try:
+        wb = load_workbook(path, data_only=True, read_only=True)
+        try:
+            for sn in wb.sheetnames:
+                ws = wb[sn]
+                mr = ws.max_row or 0
+                if mr > 10000:
+                    out.append((sn, mr))
+        finally:
+            wb.close()
+    except Exception:
+        pass
+    return out
+
+
 # 업체별 표시명 — 결과 파일명·로그용. 신규 업체 추가 시 한 줄.
 COMPANY_LABELS: dict = {
     "lty": "엘티와이",
@@ -136,6 +156,16 @@ async def process_attendance(
             f.write(excel_bytes)
         _log(f"Step 1 done [{time.time()-t0:.1f}s]")
 
+        # 1.5. 양식 파일 진단 — max_row 비정상 시트 로깅 (OOM 추적용)
+        try:
+            big_sheets = _diagnose_workbook(str(excel_orig_path))
+            if big_sheets:
+                for sn, mr in big_sheets:
+                    _log(f"  [WARN] big sheet: '{sn}' max_row={mr} (OOM risk)")
+            _log(f"Step 1.5 diagnose done [{time.time()-t0:.1f}s]")
+        except Exception as e:
+            _log(f"Step 1.5 skipped: {type(e).__name__}: {e}")
+
         # 1. 엑셀 사전 로드 — DB 시트 + 직원명 + 입사일 + 2월 시트
         excel_names: list[str] = []
         hire_dates_excel: dict = {}
@@ -146,11 +176,12 @@ async def process_attendance(
 
         _log("Step 2: Excel pre-load (find_target_sheet + extract names + DB)")
         try:
-            # 직원명 추출은 data_only=True 모드 (D열 VLOOKUP 수식의 평가된 값 필요)
+            # 양식 파일의 급여명세서 시트가 max_row=1048558 (백만 행)인 경우가 있어
+            # read_only=False 로 열면 OOM 발생 → 양쪽 모두 read_only=True 로 통일
             wb_pre_values = load_workbook(
                 str(excel_orig_path), data_only=True, read_only=True
             )
-            wb_pre = load_workbook(str(excel_orig_path), data_only=False, read_only=False)
+            wb_pre = load_workbook(str(excel_orig_path), data_only=False, read_only=True)
             try:
                 _log(f"  sheetnames: {wb_pre.sheetnames}")
                 march_sheet = find_target_sheet(wb_pre, month, sheet_name_final)
