@@ -117,9 +117,10 @@ async def process_attendance(
       try:
         pdf_path = tmp_dir / pdf.filename
         excel_orig_path = tmp_dir / excel.filename
-        # 결과 파일명: <회사명>_<연월>_근태완료.xlsx (회사명 없으면 기존 방식)
+        # 결과 파일명: <회사명>_<연월>_지급파일.xlsx (회사명 없으면 기존 방식)
+        # 지급 내역 시트가 수식 기반이라 Excel에서 열면 자동 계산됨
         if company_label:
-            out_name = f"{company_label}_{year:04d}-{month:02d}_근태완료.xlsx"
+            out_name = f"{company_label}_{year:04d}-{month:02d}_지급파일.xlsx"
         else:
             out_name = excel.filename.replace(".xlsx", "_근태자동입력_수정완료.xlsx")
         excel_out_path = tmp_dir / out_name
