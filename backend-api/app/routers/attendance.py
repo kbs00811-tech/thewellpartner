@@ -61,6 +61,12 @@ def _parse_holidays(holidays_text: str) -> dict:
     return result
 
 
+# 업체별 표시명 — 결과 파일명·로그용. 신규 업체 추가 시 한 줄.
+COMPANY_LABELS: dict = {
+    "lty": "엘티와이",
+}
+
+
 @router.post("/process")
 async def process_attendance(
     pdf: UploadFile = File(...),
@@ -76,6 +82,7 @@ async def process_attendance(
     overwrite_existing: bool = Form(False),
     fill_leave: bool = Form(False),
     enforce_pdf_month: bool = Form(False),  # 사용자 입력 강제 우선
+    company_id: Optional[str] = Form(None),  # 업체 식별자 (lty, samsung 등)
     x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
     authorization: Optional[str] = Header(None),
 ):
@@ -102,16 +109,20 @@ async def process_attendance(
     sheet_name_final = sheet_name.strip() if sheet_name and sheet_name.strip() else None
 
     t0 = time.time()
-    _log(f"=== START process_attendance year={year} month={month} ===")
+    company_label = COMPANY_LABELS.get((company_id or "").strip().lower(), "")
+    _log(f"=== START process_attendance year={year} month={month} company={company_id or '(none)'} ===")
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="attendance_"))
     try:
       try:
         pdf_path = tmp_dir / pdf.filename
         excel_orig_path = tmp_dir / excel.filename
-        excel_out_path = tmp_dir / excel.filename.replace(
-            ".xlsx", "_근태자동입력_수정완료.xlsx"
-        )
+        # 결과 파일명: <회사명>_<연월>_근태완료.xlsx (회사명 없으면 기존 방식)
+        if company_label:
+            out_name = f"{company_label}_{year:04d}-{month:02d}_근태완료.xlsx"
+        else:
+            out_name = excel.filename.replace(".xlsx", "_근태자동입력_수정완료.xlsx")
+        excel_out_path = tmp_dir / out_name
 
         _log(f"Step 1: file upload start")
         pdf_bytes = await pdf.read()

@@ -109,6 +109,10 @@ export const router = createBrowserRouter([
       { path: "attendance-import", Component: AdminAttendanceImport },
       { path: "data-cleanup", Component: AdminDataCleanup },
       { path: "payslip-batch", Component: AdminPayslipBatch },
+      // 업체별 처리 — companyId 파라미터로 백엔드 분기
+      { path: "company/:companyId/attendance-import", Component: AdminAttendanceImport },
+      { path: "company/:companyId/billing-import", Component: AdminBillingImport },
+      { path: "company/:companyId/payslip-batch", Component: AdminPayslipBatch },
     ],
   },
 ]);

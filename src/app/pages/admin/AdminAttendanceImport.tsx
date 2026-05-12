@@ -5,16 +5,20 @@
  * 백엔드: backend-api/ (Render Free Tier 배포)
  */
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useParams } from "react-router";
 import {
   Upload, FileText, FileSpreadsheet, Download, Loader2,
   CheckCircle2, AlertCircle, ArrowRight, Wifi, WifiOff,
 } from "lucide-react";
 import { attendanceApi, AttendanceProcessResult } from "../../lib/api";
 import { handleError, handleSuccess } from "../../lib/error-handler";
+import { getCompany } from "../../config/companies";
 
 const today = new Date();
 
 export default function AdminAttendanceImport() {
+  const { companyId } = useParams();
+  const company = companyId ? getCompany(companyId) : undefined;
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -96,6 +100,7 @@ export default function AdminAttendanceImport() {
         normalEnd,
         sheetName: sheetName.trim() || undefined,
         overwriteExisting,
+        companyId: company?.id,
       });
 
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -137,9 +142,14 @@ export default function AdminAttendanceImport() {
   return (
     <div className="space-y-6">
       <div>
+        {company && (
+          <div className="inline-flex items-center gap-2 px-3 py-1 mb-2 rounded-full bg-sky-100 text-sky-800 text-xs font-semibold">
+            업체: {company.name}
+          </div>
+        )}
         <h1 className="text-2xl font-bold text-slate-900">📋 출근부 자동 입력</h1>
         <p className="text-sm text-slate-600 mt-1">
-          PDF 출근부와 청구 엑셀을 업로드하면 근태/연차 시트에 자동 입력됩니다.
+          {company?.description || "PDF 출근부와 청구 엑셀을 업로드하면 근태/연차 시트에 자동 입력됩니다."}
           <span className="text-emerald-700 font-medium ml-1">수식·서식 100% 보존</span>
         </p>
       </div>

@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import * as api from "../lib/api";
 import { useAuth } from "../hooks/useAuth";
 import { ADMIN_BASE } from "../constants";
+import { getActiveCompanies } from "../config/companies";
 import { validatePasswordStrength } from "../lib/security";
 import {
   LayoutDashboard, Globe, Briefcase, Users, MessageSquare, FileText, BarChart3,
@@ -10,24 +11,43 @@ import {
   ClipboardList, Building2, Image, HelpCircle, Megaphone, UserCheck, Database,
   TrendingUp, FileCheck, Shield, History, KeyRound, MonitorSmartphone, Factory,
   MapPin, ArrowLeftRight, CalendarCheck, Globe2, FileSpreadsheet, Lock,
-  X, Loader2, Eye, EyeOff, CheckCircle2, AlertTriangle,
+  X, Loader2, Eye, EyeOff, CheckCircle2, AlertTriangle, Package,
 } from "lucide-react";
 import { LogoIcon } from "./Logo";
 import { TableSkeleton } from "./PageSkeleton";
 import { Suspense } from "react";
 import { ErrorBoundary } from "./ErrorBoundary";
 
+interface MenuChild {
+  name: string;
+  path?: string;
+  icon?: any;
+  children?: { name: string; path: string; icon?: any }[];
+}
+
 interface MenuItem {
   name: string;
   path?: string;
   icon: any;
   badge?: number;
-  children?: { name: string; path: string; icon?: any }[];
+  children?: MenuChild[];
   permKey?: string;
   badgeKey?: string;
 }
 
 const A = ADMIN_BASE;
+
+// 업체별 처리 메뉴 (companies.ts 기반 동적 생성)
+const companyMenuChildren: MenuChild[] = getActiveCompanies().map((c) => ({
+  name: c.name,
+  icon: Building2,
+  children: [
+    { name: "① 출근부 업로드 (PDF→근태)", path: `${A}/company/${c.id}/attendance-import`, icon: ClipboardList },
+    { name: "② 청구내역 업로드 (Excel)", path: `${A}/company/${c.id}/billing-import`, icon: FileSpreadsheet },
+    { name: "③ 명세서 발송", path: `${A}/company/${c.id}/payslip-batch`, icon: FileCheck },
+  ],
+}));
+
 const menuItems: MenuItem[] = [
   { name: "대시보드", path: A, icon: LayoutDashboard },
   {
@@ -78,10 +98,11 @@ const menuItems: MenuItem[] = [
       { name: "급여명세서", path: `${A}/payroll`, icon: FileSpreadsheet },
       { name: "정산 관리", path: `${A}/settlement`, icon: TrendingUp },
       { name: "계약·청구 양식", path: `${A}/contract-docs`, icon: FileText },
-      { name: "① 출근부 업로드 (PDF→근태)", path: `${A}/attendance-import`, icon: ClipboardList },
-      { name: "② 청구내역 업로드 (Excel)", path: `${A}/billing-import`, icon: FileSpreadsheet },
-      { name: "③ 명세서 발송", path: `${A}/payslip-batch`, icon: FileCheck },
     ],
+  },
+  {
+    name: "업체별 처리", icon: Package, permKey: "erp",
+    children: companyMenuChildren,
   },
   {
     name: "외국인 인력관리", icon: Globe2, permKey: "foreign",
@@ -103,12 +124,72 @@ const menuItems: MenuItem[] = [
   { name: "데이터 정리", path: `${A}/data-cleanup`, icon: Database, permKey: "settings" },
 ];
 
+function SubChildItem({ child }: { child: MenuChild }) {
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+
+  // 자식의 자식이 있는 경우 (회사별 메뉴 — 회사명 → ① ② ③)
+  if (child.children && child.children.length > 0) {
+    const subActive = child.children.some(
+      (g) => location.pathname === g.path.split("?")[0]
+    );
+    return (
+      <div>
+        <button
+          onClick={() => setOpen(!open)}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all ${
+            subActive ? "text-[var(--brand-blue)] font-semibold bg-[var(--brand-sky)]/40" : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+          }`}
+        >
+          {child.icon && <child.icon size={14} />}
+          <span className="flex-1 text-left">{child.name}</span>
+          <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+        {open && (
+          <div className="ml-4 mt-0.5 space-y-0.5 border-l border-gray-100 pl-3">
+            {child.children.map((g) => {
+              const gActive = location.pathname === g.path.split("?")[0];
+              return (
+                <Link key={g.name} to={g.path}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] transition-all ${
+                    gActive ? "text-[var(--brand-blue)] font-semibold bg-[var(--brand-sky)]/50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {g.icon && <g.icon size={13} />}
+                  {g.name}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 평범한 leaf 자식
+  if (!child.path) return null;
+  const childActive = location.pathname + location.search === child.path || location.pathname === child.path.split("?")[0];
+  return (
+    <Link to={child.path}
+      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all ${
+        childActive ? "text-[var(--brand-blue)] font-semibold bg-[var(--brand-sky)]/50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+      }`}
+    >
+      {child.icon && <child.icon size={14} />}
+      {child.name}
+    </Link>
+  );
+}
+
 function SidebarItem({ item, collapsed }: { item: MenuItem; collapsed: boolean }) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const isActive = item.path
     ? location.pathname === item.path
-    : item.children?.some((c) => location.pathname + location.search === c.path || location.pathname === c.path.split("?")[0]);
+    : item.children?.some((c) => {
+        if (c.path && (location.pathname + location.search === c.path || location.pathname === c.path.split("?")[0])) return true;
+        return c.children?.some((g) => location.pathname === g.path.split("?")[0]);
+      });
 
   if (item.children) {
     return (
@@ -130,19 +211,9 @@ function SidebarItem({ item, collapsed }: { item: MenuItem; collapsed: boolean }
         </button>
         {open && !collapsed && (
           <div className="ml-4 mt-1 space-y-0.5 border-l-2 border-gray-100 pl-3">
-            {item.children.map((child) => {
-              const childActive = location.pathname + location.search === child.path || location.pathname === child.path.split("?")[0];
-              return (
-                <Link key={child.name} to={child.path}
-                  className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all ${
-                    childActive ? "text-[var(--brand-blue)] font-semibold bg-[var(--brand-sky)]/50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  {child.icon && <child.icon size={14} />}
-                  {child.name}
-                </Link>
-              );
-            })}
+            {item.children.map((child) => (
+              <SubChildItem key={child.name} child={child} />
+            ))}
           </div>
         )}
       </div>

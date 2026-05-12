@@ -374,6 +374,7 @@ export const attendanceApi = {
     sheetName?: string;
     leaveSheetName?: string;
     overwriteExisting?: boolean;
+    companyId?: string;
   }): Promise<{ blob: Blob; filename: string; summary: AttendanceProcessResult }> => {
     const token = getToken();
     const formData = new FormData();
@@ -388,6 +389,7 @@ export const attendanceApi = {
     if (params.sheetName) formData.append("sheet_name", params.sheetName);
     formData.append("leave_sheet_name", params.leaveSheetName || "연차내역");
     formData.append("overwrite_existing", String(params.overwriteExisting ?? false));
+    if (params.companyId) formData.append("company_id", params.companyId);
 
     let res: Response;
     try {
