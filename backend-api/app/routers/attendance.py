@@ -134,16 +134,21 @@ async def process_attendance(
 
         _log("Step 2: Excel pre-load (find_target_sheet + extract names + DB)")
         try:
+            # 직원명 추출은 data_only=True 모드 (D열 VLOOKUP 수식의 평가된 값 필요)
+            wb_pre_values = load_workbook(
+                str(excel_orig_path), data_only=True, read_only=True
+            )
             wb_pre = load_workbook(str(excel_orig_path), data_only=False, read_only=False)
             try:
                 _log(f"  sheetnames: {wb_pre.sheetnames}")
                 march_sheet = find_target_sheet(wb_pre, month, sheet_name_final)
                 _log(f"  march_sheet: {march_sheet}")
-                excel_names = extract_employee_names_from_sheet(wb_pre, march_sheet)
+                # data_only=True wb에서 직원명 추출 (D열이 VLOOKUP 수식인 경우 평가 값 필요)
+                excel_names = extract_employee_names_from_sheet(wb_pre_values, march_sheet)
                 _log(f"  excel_names: {len(excel_names)}명")
 
-                # DB 시트에서 입사일/퇴사일/재직여부 추출 (최우선)
-                db_info = extract_employee_info_from_db(wb_pre)
+                # DB 시트 정보도 data_only=True wb 활용 (시급 등이 수식일 수 있음)
+                db_info = extract_employee_info_from_db(wb_pre_values)
                 _log(f"  db_info: {len(db_info)}명")
 
                 # 엑셀 시트에서 입사일 보완
@@ -163,19 +168,20 @@ async def process_attendance(
                     if info.get("resign_date"):
                         resign_dates_db[norm] = info["resign_date"]
 
-                # 2월 시트
-                feb_sheet_name = find_feb_attendance_sheet(wb_pre, year, month)
+                # 2월 시트 — check_feb_last_week_credit는 셀 값 검사 → data_only=True wb 활용
+                feb_sheet_name = find_feb_attendance_sheet(wb_pre_values, year, month)
                 _log(f"  feb_sheet: {feb_sheet_name}")
                 if feb_sheet_name:
                     for nm in excel_names:
                         result_check = check_feb_last_week_credit(
-                            wb_pre, feb_sheet_name, nm, year,
+                            wb_pre_values, feb_sheet_name, nm, year,
                             feb_month=month - 1,
                             day_to_col=DAY_TO_COL,
                         )
                         feb_credit_map[nm] = result_check
             finally:
                 wb_pre.close()
+                wb_pre_values.close()
         except Exception as e:
             _log(f"Step 2 ERROR: {type(e).__name__}: {e}")
             _log(traceback.format_exc())

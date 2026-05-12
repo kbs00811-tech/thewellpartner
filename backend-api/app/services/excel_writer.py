@@ -42,6 +42,37 @@ DAY_TO_COL: Dict[int, int] = {day: 7 + day for day in range(1, 32)}
 # 31일 옆 월말 주휴보정칸
 MONTHLY_ADJUSTMENT_COL: int = 39  # AM
 
+# 보조 항목 한글 접미사 (이게 이름 끝에 있으면 퇴직금/별도/예비 보조 행)
+_AUX_KO_SUFFIXES = ("퇴직금", "정산", "별도", "예비")
+
+
+def is_auxiliary_employee(name: str) -> bool:
+    """
+    이희영B / 조윤서B / 이미란_퇴직금 같은 퇴직금/보조 항목 판별.
+
+    규칙:
+      1. 한글 이름 + 영문 대문자 1글자 (예: "이희영B", "조윤서B")
+         → 퇴직금용 보조 행 (사용자 명시)
+      2. 한글 접미사로 끝남 (퇴직금/정산/별도/예비)
+    """
+    n = normalize_name(name)
+    if not n or len(n) < 2:
+        return False
+
+    # 영문 대문자 1글자 접미사 (한글 이름 + B/A 등)
+    last_char = n[-1]
+    if last_char.isascii() and last_char.isalpha() and last_char.isupper():
+        prev = n[-2]
+        if '가' <= prev <= '힣':
+            return True
+
+    # 한글 접미사
+    for suffix in _AUX_KO_SUFFIXES:
+        if n.endswith(suffix) and len(n) > len(suffix):
+            return True
+
+    return False
+
 
 def is_formula_cell(cell) -> bool:
     """수식 셀 판별"""
@@ -195,8 +226,17 @@ def find_target_sheet(wb, month: int, user_sheet_name: Optional[str]) -> str:
     raise ValueError(f"대상 근태 시트를 찾을 수 없습니다 (대상 월: {month}). 사용 가능: {sheets}")
 
 
-def extract_employee_names_from_sheet(wb, sheet_name: str) -> List[str]:
-    """근태 시트에서 직원명 목록 추출 (D열 + F열 '기본' 라벨 기준)"""
+def extract_employee_names_from_sheet(
+    wb,
+    sheet_name: str,
+    exclude_auxiliary: bool = True,
+) -> List[str]:
+    """
+    근태 시트에서 직원명 목록 추출 (D열 + F열 '기본' 라벨 기준).
+
+    Args:
+      exclude_auxiliary: True면 이희영B/조윤서B 같은 퇴직금 보조 행 제외
+    """
     if sheet_name not in wb.sheetnames:
         return []
     ws = wb[sheet_name]
@@ -208,24 +248,72 @@ def extract_employee_names_from_sheet(wb, sheet_name: str) -> List[str]:
             label = str(f_val).strip() if f_val else ""
             if label in BASIC_LABELS:
                 clean = normalize_name(d_val)
-                if clean and clean not in names:
-                    names.append(clean)
+                if not clean or clean in names:
+                    continue
+                if exclude_auxiliary and is_auxiliary_employee(clean):
+                    continue
+                names.append(clean)
     return names
 
 
-def find_employee_block(ws, employee_name: str) -> Optional[Dict[str, int]]:
+def extract_auxiliary_employees_from_sheet(wb, sheet_name: str) -> List[str]:
+    """근태 시트에서 보조 항목(이희영B, 조윤서B 등)만 추출 — 검증/로깅용"""
+    if sheet_name not in wb.sheetnames:
+        return []
+    ws = wb[sheet_name]
+    aux: List[str] = []
+    for r in range(1, ws.max_row + 1):
+        d_val = ws.cell(row=r, column=4).value
+        f_val = ws.cell(row=r, column=6).value
+        if d_val and isinstance(d_val, str) and d_val.strip():
+            label = str(f_val).strip() if f_val else ""
+            if label in BASIC_LABELS:
+                clean = normalize_name(d_val)
+                if clean and is_auxiliary_employee(clean) and clean not in aux:
+                    aux.append(clean)
+    return aux
+
+
+def find_employee_block(
+    ws,
+    employee_name: str,
+    name_to_row: Optional[Dict[str, int]] = None,
+) -> Optional[Dict[str, int]]:
     """
     근태 시트에서 직원 블록 위치를 찾고, 6행 구조로 매핑.
 
-    이 양식에서는 직원당 6행 구조이므로 라벨 검색 대신 위치 강제 매핑:
+    Args:
+      name_to_row: {정규화_이름: basic_row} — 미리 계산된 매핑 사용 (data_only=True 결과)
+                   D열이 VLOOKUP 수식인 양식에서 사용.
+
+    이 양식에서는 직원당 6행 구조:
       basic_row + 0 = 기본
       basic_row + 1 = 연장   ← 텍스트(연차/반차/반반차/유급/주휴) 입력 위치
-      basic_row + 2 = 심야
+      basic_row + 2 = 심야   ← 휴가+잔업 시 휴가 텍스트
       basic_row + 3 = 특근
       basic_row + 4 = 특잔
       basic_row + 5 = 지각 조퇴
     """
     name_norm = normalize_name(employee_name)
+
+    # 1순위: 미리 계산된 name_to_row 매핑 (data_only=True 결과)
+    if name_to_row:
+        r = name_to_row.get(name_norm)
+        if r:
+            return {
+                "start_row": r,
+                "기본": r,
+                "연장": r + 1,
+                "심야": r + 2,
+                "특근": r + 3,
+                "특잔": r + 4,
+                "지각조퇴": r + 5,
+            }
+        # name_to_row에 없으면 폴백으로 D열 직접 검사 시도 X
+        # (data_only=True 결과가 권위 — 폴백하면 잘못된 매칭 가능)
+        return None
+
+    # 2순위 (폴백): D열 직접 검사 (수식 양식이 아닐 때)
     for r in range(1, ws.max_row + 1):
         d_val = ws.cell(row=r, column=4).value
         f_val = ws.cell(row=r, column=6).value
@@ -244,6 +332,32 @@ def find_employee_block(ws, employee_name: str) -> Optional[Dict[str, int]]:
             "지각조퇴": r + 5,
         }
     return None
+
+
+def build_name_to_row_map(excel_path: str, sheet_name: str) -> Dict[str, int]:
+    """
+    data_only=True 모드로 엑셀 로드해서 직원명 → 기본 행 번호 매핑 생성.
+    D열이 VLOOKUP 수식인 양식에서 평가된 직원명 추출.
+    """
+    name_to_row: Dict[str, int] = {}
+    wb = load_workbook(excel_path, data_only=True, read_only=True)
+    try:
+        if sheet_name not in wb.sheetnames:
+            return name_to_row
+        ws = wb[sheet_name]
+        for r in range(1, ws.max_row + 1):
+            d_val = ws.cell(row=r, column=4).value
+            f_val = ws.cell(row=r, column=6).value
+            if not (d_val and isinstance(d_val, str)):
+                continue
+            if not (isinstance(f_val, str) and f_val.strip() in BASIC_LABELS):
+                continue
+            clean = normalize_name(d_val)
+            if clean and clean not in name_to_row:
+                name_to_row[clean] = r
+    finally:
+        wb.close()
+    return name_to_row
 
 
 def get_dow(year: int, month: int, day: int) -> str:
@@ -339,10 +453,16 @@ def classify_attendance(slot: dict, year: int, month: int, day: int,
         return result
 
     # 2. 연차/반차/반반차 → 기본 8 + 비고
+    # 잔업 숫자가 같이 있으면: 연장=숫자, 심야(3번째칸)=휴가 텍스트 (이채림 3/20)
     if note in ("연차", "반차", "반반차"):
         result["기본"] = 8
-        result["비고"] = note
         result["인정시간"] = 8
+        if ot_hours > 0:
+            # 휴가 + 잔업 동시 발생
+            result["연장"] = ot_hours
+            result["휴가원문"] = note  # 3번째 칸(심야)에 입력될 휴가 텍스트
+        else:
+            result["비고"] = note  # 연장 행에 입력
         return result
 
     # 3. 토요일 근무 → 연장 행에 숫자
@@ -614,6 +734,9 @@ def fill_attendance_sheet(
     sheet_used = find_target_sheet(wb, month, sheet_name)
     ws = wb[sheet_used]
 
+    # 직원명 → 행 매핑 생성 (data_only=True로 VLOOKUP 수식 평가값 활용)
+    name_to_row = build_name_to_row_map(excel_path, sheet_used)
+
     log: List[dict] = []
     review: List[dict] = []
     stats: Dict[str, int] = {}
@@ -640,7 +763,7 @@ def fill_attendance_sheet(
     }
 
     for name, days in pdf_data.items():
-        block = find_employee_block(ws, name)
+        block = find_employee_block(ws, name, name_to_row=name_to_row)
         if block is None:
             missing.append(name)
             counters["직원_매칭실패"] += 1
@@ -787,8 +910,33 @@ def fill_attendance_sheet(
             # 2. 연장 행 — 시간(숫자) 또는 텍스트 — 동시 발생 시 숫자 우선
             ot_value = c["연장"]
             note_text = c.get("비고")
+            vacation_with_ot = c.get("휴가원문")  # 휴가+잔업 마커
 
-            if ot_value and note_text:
+            # 휴가 + 잔업 동시 발생 — 연장에 숫자 + 심야(3번째칸)에 휴가 텍스트
+            if vacation_with_ot and ot_value:
+                # 연장 행 = 잔업 숫자
+                if safe_set_value(ws, block["연장"], col, ot_value, log):
+                    cell_count += 1
+                # 심야 행 (basic+2) = 휴가 텍스트
+                third_row = block["기본"] + 2
+                if safe_set_value(ws, third_row, col, vacation_with_ot, log):
+                    cell_count += 1
+                review.append({
+                    "구분": "휴가+잔업",
+                    "성명": name,
+                    "일자": f"{year}-{month:02d}-{day:02d}",
+                    "요일": dow,
+                    "PDF원문": (
+                        f"{days.get(day, {}).get('start', '')} "
+                        f"{days.get(day, {}).get('end', '')} "
+                        f"{days.get(day, {}).get('ot', '')} "
+                        f"{vacation_with_ot}"
+                    ).strip(),
+                    "입력값": f"기본 8 + 연장 {ot_value} + 심야 '{vacation_with_ot}'",
+                    "메시지": f"휴가+잔업 동시 — 연장 숫자 + 심야칸 '{vacation_with_ot}'",
+                })
+                # 이 케이스는 더 이상 다른 분기 가지 않게 처리 완료
+            elif ot_value and note_text:
                 # 충돌: 평일 연장 + 연차/반차/반반차/유급 동시 발생
                 counters["연장_텍스트_충돌"] += 1
                 review.append({
@@ -1038,6 +1186,32 @@ def fill_attendance_sheet(
     for entry in log:
         if entry.get("kind") == "수식셀_보호":
             counters["수식셀_덮어쓰기"] += 1
+
+    # === 청소 단계: 원본에 사용자가 메모해둔 '퇴사' 텍스트 자동 청소 ===
+    # 완성 폼 패턴: 사용자가 원본 엑셀에 임시로 '퇴사' 메모 → 최종에서 빈칸으로 청소
+    cleanup_count = 0
+    for name in pdf_data.keys():
+        block = find_employee_block(ws, name, name_to_row=name_to_row)
+        if not block:
+            continue
+        for day in range(1, 32):
+            col = DAY_TO_COL.get(day)
+            if not col:
+                continue
+            for row_key in ("기본", "연장", "심야", "특근", "특잔", "지각조퇴"):
+                r = block.get(row_key)
+                if not r:
+                    continue
+                cell = ws.cell(row=r, column=col)
+                if isinstance(cell, MergedCell):
+                    continue
+                if is_formula_cell(cell):
+                    continue
+                if cell.value == "퇴사":
+                    cell.value = None
+                    cleanup_count += 1
+    if cleanup_count > 0:
+        counters["퇴사텍스트_청소"] = cleanup_count
 
     return {
         "stats": stats,
