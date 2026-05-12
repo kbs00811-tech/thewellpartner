@@ -147,9 +147,9 @@ export default function AdminAttendanceImport() {
             업체: {company.name}
           </div>
         )}
-        <h1 className="text-2xl font-bold text-slate-900">📋 출근부 자동 입력</h1>
+        <h1 className="text-2xl font-bold text-slate-900">📋 근태 자동입력 (지급파일 생성)</h1>
         <p className="text-sm text-slate-600 mt-1">
-          {company?.description || "PDF 출근부와 청구 엑셀을 업로드하면 근태/연차 시트에 자동 입력됩니다."}
+          PDF 출근부 + 양식 xlsx 업로드 → 근태 자동 입력 후 <strong>모든 시트가 자동 계산된 지급파일</strong>이 생성됩니다.
           <span className="text-emerald-700 font-medium ml-1">수식·서식 100% 보존</span>
         </p>
       </div>

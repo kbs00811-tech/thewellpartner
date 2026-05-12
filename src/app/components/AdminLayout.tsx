@@ -42,9 +42,9 @@ const companyMenuChildren: MenuChild[] = getActiveCompanies().map((c) => ({
   name: c.name,
   icon: Building2,
   children: [
-    { name: "① 출근부 업로드 (PDF→근태)", path: `${A}/company/${c.id}/attendance-import`, icon: ClipboardList },
-    { name: "② 청구내역 업로드 (Excel)", path: `${A}/company/${c.id}/billing-import`, icon: FileSpreadsheet },
-    { name: "③ 명세서 발송", path: `${A}/company/${c.id}/payslip-batch`, icon: FileCheck },
+    { name: "① 근태 자동입력 (지급파일 생성)", path: `${A}/company/${c.id}/attendance-import`, icon: ClipboardList },
+    { name: "② 청구서 PDF 출력", path: `${A}/company/${c.id}/billing-import`, icon: FileSpreadsheet },
+    { name: "③ 급여명세서 발송", path: `${A}/company/${c.id}/payslip-batch`, icon: FileCheck },
   ],
 }));
 
