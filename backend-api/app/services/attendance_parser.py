@@ -52,6 +52,17 @@ def _extract_korean_only(text: str) -> str:
     return ''.join(c for c in text if '가' <= c <= '힣')
 
 
+def _edit_distance_1(a: str, b: str) -> bool:
+    """두 문자열의 편집거리가 정확히 1인지 빠르게 검사 (길이 같은 substitution만).
+    한글 이름 매칭용 — 거래처 PDF 오타 (예: 배성연 ↔ 배성현) 자동 매칭.
+    삽입/삭제는 지원 안 함 (오인식 위험 너무 큼).
+    """
+    if not a or not b or len(a) != len(b) or len(a) < 2:
+        return False
+    diff = sum(1 for x, y in zip(a, b) if x != y)
+    return diff == 1
+
+
 def _match_expected_names_in_tokens(
     tokens: List[dict],
     expected_names: List[str],
@@ -141,6 +152,54 @@ def _match_expected_names_in_tokens(
                     name_to_x_center[name] = x_center
                 break
             start = idx + 1
+
+    # 4.5. fuzzy 보강 — 정확 매칭 실패한 expected_names 중,
+    #      사용 안 된 토큰 영역에서 편집거리 1 이내 후보 검색.
+    #      거래처 PDF 오타 자동 처리 (예: 배성연 ↔ 배성현)
+    #      안전 가드: 양식 안 다른 직원과 충돌 없을 때만 (1:1 대응)
+    unmatched = [n for n in sorted_names if n not in name_to_x_center]
+    if unmatched:
+        # 사용 안 된 한글 substring 후보 (token boundary 기준)
+        # 한 토큰 단위로 fuzzy candidate 추출
+        candidates = []  # (kor_str, idx_in_full, end_idx)
+        for ts, te, tok in token_ranges:
+            # 이미 사용된 범위와 겹치면 제외
+            if any(s < te and e > ts for s, e in used_ranges):
+                continue
+            kor = tok["kor"]
+            if 2 <= len(kor) <= 4:
+                candidates.append((kor, ts, te, tok))
+        # 인접 토큰 결합도 시도 (한글이 토큰 분할된 케이스: "배 성연")
+        for i in range(len(candidates) - 1):
+            a_kor, a_ts, a_te, a_tok = candidates[i]
+            b_kor, b_ts, b_te, b_tok = candidates[i + 1]
+            # 인접 토큰 (top 같고 x 가까움)
+            if abs(a_tok.get("top", 0) - b_tok.get("top", 0)) <= 3:
+                merged = a_kor + b_kor
+                if 2 <= len(merged) <= 4:
+                    candidates.append((merged, a_ts, b_te, a_tok))
+
+        for name in unmatched:
+            norm_name = _extract_korean_only(name)
+            if not norm_name or len(norm_name) < 2:
+                continue
+            # 충돌 가드: 양식 안 다른 직원 이름과 편집거리 1 이내인 경우 자동 매칭 X
+            conflict = any(
+                _edit_distance_1(norm_name, _extract_korean_only(other))
+                for other in sorted_names
+                if other != name and _extract_korean_only(other)
+            )
+            if conflict:
+                continue
+            # 후보 중 편집거리 1 매칭
+            for c_kor, c_ts, c_te, c_tok in candidates:
+                if c_ts < 0 or any(s < c_te and e > c_ts for s, e in used_ranges):
+                    continue
+                if _edit_distance_1(norm_name, c_kor):
+                    used_ranges.append((c_ts, c_te))
+                    x_center = (c_tok["x0"] + c_tok["x1"]) / 2
+                    name_to_x_center[name] = x_center
+                    break
 
     # 5. x_center 기준 좌→우 정렬
     matched = sorted(name_to_x_center.items(), key=lambda p: p[1])
