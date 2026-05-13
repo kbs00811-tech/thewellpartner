@@ -503,17 +503,28 @@ def classify_attendance(slot: dict, year: int, month: int, day: int,
             result["연장"] = ot_hours
         else:
             # 잔업 명시 없음 → 8h 기준 부족분만 지각조퇴로 입력
-            # (시작 늦거나 종료 늦어도 잔업 자동 계산 X)
-            # 예: 13:30~20:00 → 실근무 5.5h → 부족 2.5h → 지각조퇴 -2 (절삭)
-            actual_hours = max(0, e_h - s_h - 1)  # 점심 1시간 제외
+            # 휴게 차감 룰 (엘티와이 본사):
+            #   점심 12:30~13:30 (1h) — 종료가 13:30 이후일 때만 차감 (점심 걸침)
+            #   저녁 17:30~18:00 (0.5h) — 종료가 18:00 이후일 때만 차감 (저녁 걸침)
+            #     ex) 8:30~17:30 → 9-1 = 8h (점심만)
+            #     ex) 8:30~20:00 → 11.5-1-0.5 = 10h (점심+저녁)
+            #     ex) 8:30~10:30 → 2h (둘 다 안 거침)
+            #     ex) 13:30~20:00 → 6.5-0.5 = 6h (저녁만)
+            LUNCH_START, LUNCH_END = 12.5, 13.5
+            DINNER_START, DINNER_END = 17.5, 18.0
+            raw = max(0, e_h - s_h)
+            break_h = 0.0
+            # 점심 거침: 시작 12:30 이전 + 종료 13:30 이후
+            if s_h < LUNCH_END and e_h >= LUNCH_END:
+                break_h += 1.0
+            # 저녁 거침: 시작 17:30 이전 + 종료 18:00 이후
+            if s_h < DINNER_END and e_h >= DINNER_END:
+                break_h += 0.5
+            actual_hours = max(0, raw - break_h)
             capped_actual = min(8, actual_hours)
             deficit = 8 - capped_actual
             if deficit > 0.05:
-                # 사용자 양식 기준: 절삭 (2.5 → 2, 4.0 → 4)
-                if deficit == int(deficit):
-                    result["지각조퇴"] = -int(deficit)
-                else:
-                    result["지각조퇴"] = -int(deficit)  # truncation
+                result["지각조퇴"] = -int(deficit)  # truncation
 
         return result
 
