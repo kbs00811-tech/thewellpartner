@@ -409,11 +409,14 @@ def classify_attendance(slot: dict, year: int, month: int, day: int,
     result = {
         "기본": 0, "연장": 0, "심야": 0, "특근": 0, "특잔": 0,
         "지각조퇴": 0, "비고": "", "인정시간": 0,
+        "심야값": 0,  # PDF 라벨 기반 심야 (권혜경 양식: 잔업+심야 동시)
     }
     start = slot.get("start", "")
     end = slot.get("end", "")
     ot_str = slot.get("ot", "")
     note = slot.get("note", "")
+    night_str = slot.get("night", "")  # 심야 (PDF 라벨 기반, 권혜경 양식)
+    # 교대(shift)는 월 합산이라 fill_attendance_sheet에서 별도 처리
 
     if not is_valid_day(year, month, day):
         return result
@@ -434,6 +437,14 @@ def classify_attendance(slot: dict, year: int, month: int, day: int,
 
     if note in ("퇴사",):
         return result
+
+    # === 심야 값 파싱 (PDF 라벨 기반) ===
+    try:
+        night_val = float(night_str) if night_str else 0
+        if night_val > 0:
+            result["심야값"] = night_val
+    except (ValueError, TypeError):
+        pass
 
     dow = get_dow(year, month, day)
     is_saturday = dow == "토"
@@ -1019,10 +1030,12 @@ def fill_attendance_sheet(
                         "메시지": f"{note_text} 처리 — 기본 8h 인정 + 연장 행에 텍스트 표기",
                     })
 
-            # 3. 심야
-            if c["심야"]:
-                if safe_set_value(ws, block["심야"], col, c["심야"], log):
+            # 3. 심야 (기존 c["심야"] 또는 PDF 라벨 기반 c["심야값"])
+            night_value = c["심야"] or c.get("심야값", 0)
+            if night_value:
+                if safe_set_value(ws, block["심야"], col, night_value, log):
                     cell_count += 1
+                counters["심야_입력"] = counters.get("심야_입력", 0) + 1
 
             # 4. 특잔
             if c["특잔"]:
@@ -1198,6 +1211,30 @@ def fill_attendance_sheet(
                 "입력값": str(adj_value),
                 "메시지": f"인정시간 {인정합계}h → 보정 {adj_value}h (= 209 - 인정합계)",
             })
+
+        # === 교대 시간 월 합산 → AM열 연장 행에 입력 (권혜경 양식) ===
+        shift_total = 0.0
+        for d_iter in range(1, 32):
+            shift_val = days.get(d_iter, {}).get("shift", "")
+            if shift_val:
+                try:
+                    shift_total += float(shift_val)
+                except (ValueError, TypeError):
+                    pass
+        if shift_total > 0:
+            shift_rounded = round(shift_total, 1)
+            if safe_set_value(ws, block["연장"], MONTHLY_ADJUSTMENT_COL, shift_rounded, log):
+                cell_count += 1
+                counters["교대_AM열_입력"] = counters.get("교대_AM열_입력", 0) + 1
+                review.append({
+                    "구분": "교대_월합산",
+                    "성명": name,
+                    "일자": f"{year}-{month:02d}-AM",
+                    "요일": "",
+                    "PDF원문": "",
+                    "입력값": str(shift_rounded),
+                    "메시지": f"교대 시간 월 합산 {shift_rounded}h → AM열 연장 행 입력",
+                })
 
         stats[name] = cell_count
 

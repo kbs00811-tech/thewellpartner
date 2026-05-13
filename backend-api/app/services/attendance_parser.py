@@ -18,6 +18,12 @@ DOW_TOKENS = {"일", "월", "화", "수", "목", "금", "토"}
 SPECIAL_NOTES = ["연차", "반차", "반반", "반반차", "퇴사", "주휴", "유급",
                   "(연차)", "(반차)", "(반반)", "(반반차)", "결근"]
 
+# 라벨 행에 나타날 수 있는 토큰 (P7 같은 5/4줄 양식 대응)
+# "시작" "종료"는 PDF에서 "시"+"작" / "종"+"료" 로 분리 가능 → 결합 처리
+LABEL_TOKENS = {"시작", "종료", "잔업", "심야", "교대", "원단", "특근", "특잔"}
+LABEL_SPLIT_FIRST = {"시", "종"}
+LABEL_SPLIT_SECOND = {"작": "시작", "료": "종료"}
+
 
 def normalize_name(name: str) -> str:
     return str(name or "").replace(" ", "").strip()
@@ -204,6 +210,78 @@ def _match_expected_names_in_tokens(
     # 5. x_center 기준 좌→우 정렬
     matched = sorted(name_to_x_center.items(), key=lambda p: p[1])
     return matched
+
+
+def _detect_label_row(rows: List[Tuple[float, List[dict]]]) -> Optional[List[dict]]:
+    """라벨 행 (시작/종료/잔업/심야/교대/원단/특근/특잔)을 감지하여 결합된 라벨 토큰 반환.
+    "시" + "작" 분리는 합쳐서 "시작"으로 처리.
+
+    Returns:
+      [{text: '시작', x0, x1, x_center}, ...] 라벨 순서대로
+      라벨 행 없으면 None
+    """
+    for top, row in rows:
+        if not row:
+            continue
+        # 라벨 결합
+        merged: List[dict] = []
+        i = 0
+        while i < len(row):
+            t = row[i]
+            txt = t["text"].strip()
+            if txt in LABEL_SPLIT_FIRST and i + 1 < len(row):
+                nxt = row[i + 1]["text"].strip()
+                if nxt in LABEL_SPLIT_SECOND:
+                    combined = LABEL_SPLIT_SECOND[nxt]
+                    merged.append({
+                        "text": combined,
+                        "x0": t["x0"],
+                        "x1": row[i + 1]["x1"],
+                        "x_center": (t["x0"] + row[i + 1]["x1"]) / 2,
+                    })
+                    i += 2
+                    continue
+            if txt in LABEL_TOKENS:
+                merged.append({
+                    "text": txt,
+                    "x0": t["x0"],
+                    "x1": t["x1"],
+                    "x_center": (t["x0"] + t["x1"]) / 2,
+                })
+            i += 1
+        # 라벨 후보 3개 이상이면 라벨 행으로 인정
+        if len(merged) >= 3:
+            return merged
+    return None
+
+
+def _group_labels_by_employee(
+    labels: List[dict],
+    employee_x_centers: List[float],
+) -> List[List[dict]]:
+    """라벨 토큰들을 직원 column 별로 그룹화.
+    직원당 라벨 수는 다를 수 있음 (P7: 권혜경 5개 / 조근배 4개 / 3번째 5개).
+
+    그룹화 방법: '시작' 라벨 위치로 group boundary 결정.
+    각 '시작' 다음부터 다음 '시작' 직전까지 한 직원의 라벨 그룹.
+
+    Returns: [[label_dict, ...], [label_dict, ...], ...]  직원 수 만큼
+    """
+    if not labels:
+        return []
+    # '시작' 위치 인덱스 추출
+    start_indices = [i for i, lab in enumerate(labels) if lab["text"] == "시작"]
+    if not start_indices:
+        # 시작 라벨 없으면 단순 균등 분할
+        n_emp = max(1, len(employee_x_centers))
+        per = len(labels) // n_emp
+        return [labels[i * per:(i + 1) * per] for i in range(n_emp)]
+
+    groups: List[List[dict]] = []
+    for k, s in enumerate(start_indices):
+        end = start_indices[k + 1] if k + 1 < len(start_indices) else len(labels)
+        groups.append(labels[s:end])
+    return groups
 
 
 def _correct_day_sequence(raw_days: List[Optional[int]]) -> Tuple[List[Optional[int]], List[dict]]:
@@ -446,6 +524,21 @@ def parse_pdf(
             else:
                 col_width = 100
 
+            # === 라벨 행 감지 + 직원별 라벨 그룹 분리 (P7 같은 5/4줄 양식 지원) ===
+            # 표준 3줄 (시작/종료/잔업)이면 emp_labels[i] 가 3개 → 기존 로직과 동일
+            # 4줄 이상 (심야/교대/원단/특근/특잔)이면 라벨 위치 기반 정확 매핑
+            label_tokens = _detect_label_row(rows)
+            emp_label_groups: List[List[dict]] = []
+            use_label_based = False
+            if label_tokens:
+                # 그룹 분리: '시작' 라벨 시작점 기준
+                groups = _group_labels_by_employee(label_tokens, employee_x_centers)
+                # 직원 수 ≥ 그룹 수 일 때만 사용 (매칭이 부족하면 기존 로직)
+                if len(groups) >= len(employee_x_centers):
+                    emp_label_groups = groups[:len(employee_x_centers)]
+                    # 4줄 이상 직원이 하나라도 있으면 라벨 기반 모드
+                    use_label_based = any(len(g) > 3 for g in emp_label_groups)
+
             # === 일자 행 추출 (보정 전 raw) ===
             day_rows: List[Tuple[Optional[int], List[dict]]] = []  # (raw_day, data_tokens)
             for top, row in rows:
@@ -477,7 +570,7 @@ def parse_pdf(
                     continue
                 day = corrected_day
 
-                for name, emp_x in zip(employee_names, employee_x_centers):
+                for emp_idx, (name, emp_x) in enumerate(zip(employee_names, employee_x_centers)):
                     half = col_width / 2
                     in_range = [
                         t for t in data_tokens
@@ -488,6 +581,40 @@ def parse_pdf(
                     in_range.sort(key=lambda t: t["x0"])
 
                     slot = result[name][day]
+
+                    # 라벨 기반 처리 (P7 같은 4/5줄 양식)
+                    if use_label_based and emp_idx < len(emp_label_groups) and len(emp_label_groups[emp_idx]) > 3:
+                        emp_labels = emp_label_groups[emp_idx]
+                        for tok in in_range:
+                            text = tok["text"].strip()
+                            t_center = (tok["x0"] + tok["x1"]) / 2
+                            # SPECIAL_NOTES 우선
+                            if text in SPECIAL_NOTES:
+                                slot["note"] = normalize_note(text)
+                                continue
+                            # 가장 가까운 라벨 찾기
+                            nearest = min(emp_labels, key=lambda lab: abs(lab["x_center"] - t_center))
+                            lab_name = nearest["text"]
+                            if lab_name == "시작" and TIME_RE.match(text):
+                                slot["start"] = text
+                            elif lab_name == "종료" and TIME_RE.match(text):
+                                slot["end"] = text
+                            elif lab_name == "잔업" and NUM_RE.match(text):
+                                slot["ot"] = text
+                            elif lab_name == "심야" and NUM_RE.match(text):
+                                slot["night"] = text
+                            elif lab_name == "교대" and NUM_RE.match(text):
+                                slot["shift"] = text
+                            elif lab_name == "특근" and NUM_RE.match(text):
+                                slot["saturday_work"] = text
+                            elif lab_name == "특잔" and NUM_RE.match(text):
+                                slot["saturday_ot"] = text
+                            elif lab_name == "원단":
+                                # 무시 (조근배 양식)
+                                pass
+                        continue
+
+                    # 표준 3줄 양식: 기존 로직 (회귀 0)
                     for tok in in_range:
                         text = tok["text"].strip()
                         if text in SPECIAL_NOTES:
