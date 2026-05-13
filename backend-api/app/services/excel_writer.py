@@ -961,6 +961,14 @@ def fill_attendance_sheet(
                     cell_count += 1
                 if is_weekend:
                     counters["주말근무_연장행입력"] += 1
+                    # 주말 근무 시 양식에 미리 들어있는 특근 행 값 청소 (잔업+특근 중복 방지)
+                    teukgun_row = block.get("특근")
+                    if teukgun_row:
+                        tk_cell = ws.cell(row=teukgun_row, column=col)
+                        if not isinstance(tk_cell, MergedCell) and not is_formula_cell(tk_cell):
+                            if tk_cell.value is not None:
+                                tk_cell.value = None
+                                counters["주말_특근행_청소"] = counters.get("주말_특근행_청소", 0) + 1
                     review.append({
                         "구분": "주말근무_연장행",
                         "성명": name,
