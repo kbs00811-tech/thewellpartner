@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .routers import attendance
+from .routers import attendance, payslip
 
 app = FastAPI(
     title="더웰파트너 처리 API",
@@ -94,3 +94,4 @@ async def health():
 
 
 app.include_router(attendance.router)
+app.include_router(payslip.router)

@@ -357,6 +357,78 @@ export interface AttendanceProcessResult {
   review_count: number;
 }
 
+// === 명세서 발송 API ===
+export const payslipApi = {
+  /** 결과 xlsx 업로드 → 직원 목록 + 연락처 반환 */
+  listEmployees: async (excel: File) => {
+    const token = getToken();
+    const fd = new FormData();
+    fd.append("excel", excel);
+    const res = await fetchWithTimeout(`${ATTENDANCE_API_URL}/api/payslip/employees`, {
+      method: "POST",
+      headers: { ...(token ? { "X-Admin-Token": token } : {}) },
+      body: fd,
+      timeout: 60_000,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new ApiError(err.detail || "직원 목록 조회 실패", res.status, "LIST_FAIL");
+    }
+    return await res.json() as { employees: Array<{ no: number; name: string; phone?: string; hire_date?: string; resign_date?: string; hourly_rate?: number; bank?: string; account?: string }> };
+  },
+
+  /** 명세서 발송 (SMS / LMS / 알림톡) */
+  send: async (params: {
+    excel: File;
+    year: number;
+    month: number;
+    channel: "sms" | "lms" | "alimtalk";
+    employee_nos: number[];
+    company_id?: string;
+  }) => {
+    const token = getToken();
+    const fd = new FormData();
+    fd.append("excel", params.excel);
+    fd.append("payload", JSON.stringify({
+      company_id: params.company_id || "lty",
+      year: params.year,
+      month: params.month,
+      channel: params.channel,
+      employee_nos: params.employee_nos,
+    }));
+    const res = await fetchWithTimeout(`${ATTENDANCE_API_URL}/api/payslip/send`, {
+      method: "POST",
+      headers: { ...(token ? { "X-Admin-Token": token } : {}) },
+      body: fd,
+      timeout: 180_000,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new ApiError(err.detail || "발송 실패", res.status, "SEND_FAIL");
+    }
+    return await res.json() as {
+      ok: boolean;
+      solapi_ready: boolean;
+      channel: string;
+      total: number;
+      results: Array<{ no: number; name: string; phone?: string; url: string; status: string; error?: string | null }>;
+    };
+  },
+
+  /** 직원용 명세서 데이터 조회 (토큰 기반, 인증 불필요) */
+  getData: async (token: string) => {
+    const res = await fetchWithTimeout(`${ATTENDANCE_API_URL}/api/payslip/data/${token}`, {
+      method: "GET",
+      timeout: 30_000,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new ApiError(err.detail || "명세서 조회 실패", res.status, "DATA_FAIL");
+    }
+    return await res.json();
+  },
+};
+
 export const attendanceApi = {
   /**
    * PDF + Excel → 근태/연차 자동 입력 후 결과 엑셀 다운로드.

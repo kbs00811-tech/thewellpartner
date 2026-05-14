@@ -17,6 +17,7 @@ const EmployeeRegister = lazy(() => import("./pages/EmployeeRegister"));
 const Privacy = lazy(() => import("./pages/Privacy"));
 const Terms = lazy(() => import("./pages/Terms"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const PayslipView = lazy(() => import("./pages/PayslipView"));
 
 // Admin pages — lazy loaded
 const AdminLogin = lazy(() => import("./pages/admin/AdminLogin"));
@@ -61,6 +62,7 @@ export const router = createBrowserRouter([
       { path: "register", Component: EmployeeRegister },
       { path: "privacy", Component: Privacy },
       { path: "terms", Component: Terms },
+      { path: "payslip/:token", Component: PayslipView },
       { path: "*", Component: NotFound },
     ],
   },
