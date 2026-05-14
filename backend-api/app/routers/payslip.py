@@ -179,7 +179,17 @@ async def send_payslip(
             # 솔라피 발송 (API 키 있을 때만)
             send_status = "skipped_no_api_key"
             error = None
-            if solapi_ready and emp.phone:
+            if not solapi_ready:
+                if not api_key:
+                    error = "SOLAPI_API_KEY env not set"
+                elif not api_secret:
+                    error = "SOLAPI_API_SECRET env not set"
+                elif not sender:
+                    error = "SOLAPI_SENDER env not set"
+            elif not emp.phone:
+                send_status = "no_phone"
+                error = "직원 연락처 없음"
+            else:
                 try:
                     send_status = _send_solapi(
                         api_key, api_secret, sender,
@@ -188,8 +198,9 @@ async def send_payslip(
                         text=_build_message(emp.name, req.year, req.month, url),
                     )
                 except Exception as e:
-                    error = f"{type(e).__name__}: {e}"
+                    error = f"{type(e).__name__}: {str(e)[:300]}"
                     send_status = "failed"
+                    _log(f"  send fail {emp.name}: {error}")
 
             results.append({
                 "no": emp.no,
@@ -236,33 +247,53 @@ def _send_solapi(
     channel: str,
     text: str,
 ) -> str:
-    """솔라피 SDK로 발송. 성공 시 'sent' 반환."""
+    """솔라피 SDK 5.x로 발송. 성공 시 'sent' 반환.
+
+    공식 SDK는 type 파라미터를 받지 않음 — 텍스트 길이로 자동 SMS/LMS 결정.
+    알림톡은 KakaoOption (pf_id + template_id) 필요 — 환경변수 등록 안 되면 SMS로 폴백.
+    """
     try:
-        # solapi 5.x API
         from solapi import SolapiMessageService
         from solapi.model import RequestMessage
     except ImportError:
         return "sdk_not_installed"
 
     msg_service = SolapiMessageService(api_key=api_key, api_secret=api_secret)
-    # 채널별 type 매핑
-    msg_type = "SMS"
-    if channel == "lms":
-        msg_type = "LMS"
-    elif channel == "alimtalk":
-        msg_type = "ATA"  # 알림톡
+    sender_clean = sender.replace("-", "").replace(" ", "")
+    to_clean = to_phone.replace("-", "").replace(" ", "")
 
-    message = RequestMessage(
-        from_=sender.replace("-", ""),
-        to=to_phone.replace("-", ""),
-        text=text,
-        type=msg_type,
-    )
+    kakao_option = None
+    if channel == "alimtalk":
+        pf_id = os.environ.get("SOLAPI_PF_ID", "").strip()
+        template_id = os.environ.get("SOLAPI_TEMPLATE_ID", "").strip()
+        if pf_id and template_id:
+            try:
+                from solapi.model.kakao.kakao_option import KakaoOption
+                kakao_option = KakaoOption(pf_id=pf_id, template_id=template_id)
+            except ImportError:
+                kakao_option = None
+        # 알림톡 옵션 없으면 SMS로 폴백
+        # (사용자가 KakaoBiz 채널/템플릿 등록 안 한 단계)
+
+    # RequestMessage 생성 — type 인자 사용 안 함 (텍스트 길이로 자동)
+    msg_kwargs = {
+        "from_": sender_clean,
+        "to": to_clean,
+        "text": text,
+    }
+    if kakao_option is not None:
+        msg_kwargs["kakao_options"] = kakao_option
+
+    message = RequestMessage(**msg_kwargs)
+    response = msg_service.send(message)
+    # 응답 검증 — registered_failed > 0 이면 실패
     try:
-        res = msg_service.send(message)
-        return "sent"
-    except Exception as e:
-        raise
+        failed = getattr(response.group_info.count, "registered_failed", 0) or 0
+        if failed > 0:
+            raise RuntimeError(f"solapi registered_failed={failed}")
+    except AttributeError:
+        pass  # 응답 구조 다른 경우 그냥 통과
+    return "sent"
 
 
 @router.get("/data/{token}")
