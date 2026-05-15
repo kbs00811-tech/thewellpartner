@@ -237,11 +237,19 @@ async def send_payslip(
                 error = "직원 연락처 없음"
             else:
                 try:
+                    # 알림톡 템플릿 변수 (사용자 솔라피 템플릿에 등록한 변수명에 맞춰야 함)
+                    # 기본: #{이름}/#{연월}/#{URL}. 다른 변수명 사용 시 환경변수로 매핑 가능 (추후)
+                    alimtalk_vars = {
+                        "#{이름}": emp.name,
+                        "#{연월}": f"{req.year}년 {req.month}월",
+                        "#{URL}": url,
+                    }
                     send_status = _send_solapi(
                         api_key, api_secret, sender,
                         to_phone=emp.phone,
                         channel=req.channel,
                         text=_build_message(emp.name, req.year, req.month, url),
+                        variables=alimtalk_vars if req.channel == "alimtalk" else None,
                     )
                 except Exception as e:
                     error = f"{type(e).__name__}: {str(e)[:300]}"
@@ -295,11 +303,14 @@ def _send_solapi(
     to_phone: str,
     channel: str,
     text: str,
+    variables: Optional[dict] = None,
 ) -> str:
     """솔라피 SDK 5.x로 발송. 성공 시 'sent' 반환.
 
     공식 SDK는 type 파라미터를 받지 않음 — 텍스트 길이로 자동 SMS/LMS 결정.
-    알림톡은 KakaoOption (pf_id + template_id) 필요 — 환경변수 등록 안 되면 SMS로 폴백.
+    알림톡은 KakaoOption (pf_id + template_id + variables) 필요.
+      환경변수 미설정 시 SMS로 폴백.
+      variables는 템플릿 변수 치환 dict (예: {"#{이름}": "이미란", "#{URL}": "https://..."})
     """
     try:
         from solapi import SolapiMessageService
@@ -318,11 +329,13 @@ def _send_solapi(
         if pf_id and template_id:
             try:
                 from solapi.model.kakao.kakao_option import KakaoOption
-                kakao_option = KakaoOption(pf_id=pf_id, template_id=template_id)
+                kakao_kwargs = {"pf_id": pf_id, "template_id": template_id}
+                if variables:
+                    kakao_kwargs["variables"] = variables
+                kakao_option = KakaoOption(**kakao_kwargs)
             except ImportError:
                 kakao_option = None
-        # 알림톡 옵션 없으면 SMS로 폴백
-        # (사용자가 KakaoBiz 채널/템플릿 등록 안 한 단계)
+        # 알림톡 옵션 없으면 SMS로 폴백 (KakaoBiz 채널/템플릿 미등록 단계)
 
     # RequestMessage 생성 — type 인자 사용 안 함 (텍스트 길이로 자동)
     msg_kwargs = {
