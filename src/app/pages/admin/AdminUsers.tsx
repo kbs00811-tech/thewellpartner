@@ -32,7 +32,13 @@ export default function AdminUsers() {
         if (!update.password_hash) delete update.password_hash;
         await api.adminUsers.update(editId, update);
       } else {
-        await api.adminUsers.create({ ...formData, status: "ACTIVE", password_hash: formData.password_hash || "changeme123" });
+        // 신규 등록 시 비밀번호 필수 — 하드코딩된 기본값 제거 (보안 강화)
+        if (!formData.password_hash || formData.password_hash.length < 8) {
+          handleError(new Error("초기 비밀번호는 8자 이상으로 입력해주세요."));
+          setSaving(false);
+          return;
+        }
+        await api.adminUsers.create({ ...formData, status: "ACTIVE", password_hash: formData.password_hash });
       }
       setShowForm(false); setFormData({}); setEditId(null);
       handleSuccess(editId ? "계정이 수정되었습니다." : "새 관리자가 등록되었습니다.");
@@ -80,8 +86,16 @@ export default function AdminUsers() {
               <input type="text" value={formData.username || ""} onChange={e => setFormData({ ...formData, username: e.target.value })} className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)]" disabled={!!editId} />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5">{editId ? "새 비밀번호 (변경 시)" : "비밀번호 *"}</label>
-              <input type="password" placeholder={editId ? "변경하지 않으려면 비워두세요" : ""} value={formData.password_hash || ""} onChange={e => setFormData({ ...formData, password_hash: e.target.value })} className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)]" />
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5">{editId ? "새 비밀번호 (변경 시)" : "비밀번호 * (8자 이상)"}</label>
+              <input
+                type="password"
+                placeholder={editId ? "변경하지 않으려면 비워두세요" : "8자 이상 영문+숫자"}
+                value={formData.password_hash || ""}
+                onChange={e => setFormData({ ...formData, password_hash: e.target.value })}
+                minLength={editId ? 0 : 8}
+                required={!editId}
+                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[var(--brand-blue)]"
+              />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1.5">이름 *</label>

@@ -24,10 +24,14 @@ from ..auth import verify_admin_token
 router = APIRouter(prefix="/api/payslip", tags=["payslip"])
 
 
-# === 임시 토큰 저장소 (in-memory, 24시간 유효) ===
-# 운영 안정성 위해 추후 Redis/DB로 이전
+# === 토큰 저장소 — 메모리 + 디스크 백업 (24시간 유효) ===
+# Render 컨테이너 재시작/재배포 시 메모리 토큰 소실 방지
+# Render Standard는 idle 슬립 없으나 배포 시 재시작 → 디스크 백업으로 복원
 TOKEN_STORE: dict = {}
 TOKEN_TTL = 86400  # 24시간
+
+# Render 영구 디스크 권장 경로. 미설정 시 임시 디스크(/tmp)
+TOKEN_STORE_PATH = os.environ.get("PAYSLIP_TOKEN_STORE", "/tmp/payslip_tokens.pkl")
 
 
 def _log(msg: str):
@@ -36,12 +40,50 @@ def _log(msg: str):
     sys.stdout.flush()
 
 
+def _save_tokens_to_disk():
+    """TOKEN_STORE 디스크 백업 (배포/재시작 후 복원용)"""
+    try:
+        import pickle
+        # bytes 데이터 포함이라 pickle 사용 (JSON 불가)
+        with open(TOKEN_STORE_PATH, "wb") as f:
+            pickle.dump(TOKEN_STORE, f, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception as e:
+        _log(f"token save failed (non-fatal): {type(e).__name__}: {e}")
+
+
+def _load_tokens_from_disk():
+    """시작 시 디스크에서 토큰 복원"""
+    try:
+        if not os.path.exists(TOKEN_STORE_PATH):
+            return
+        import pickle
+        with open(TOKEN_STORE_PATH, "rb") as f:
+            data = pickle.load(f)
+        # 만료된 것은 자동 제외
+        now = time.time()
+        loaded = 0
+        for k, v in data.items():
+            if v.get("expires_at", 0) > now:
+                TOKEN_STORE[k] = v
+                loaded += 1
+        if loaded:
+            _log(f"token store restored from disk: {loaded} active tokens")
+    except Exception as e:
+        _log(f"token load failed (non-fatal): {type(e).__name__}: {e}")
+
+
+# 모듈 import 시 디스크에서 자동 복원
+_load_tokens_from_disk()
+
+
 def _cleanup_expired_tokens():
     """만료된 토큰 제거 (메모리 관리)"""
     now = time.time()
     expired = [k for k, v in TOKEN_STORE.items() if v.get("expires_at", 0) < now]
-    for k in expired:
-        TOKEN_STORE.pop(k, None)
+    if expired:
+        for k in expired:
+            TOKEN_STORE.pop(k, None)
+        _save_tokens_to_disk()
 
 
 class EmployeeInfo(BaseModel):
@@ -214,6 +256,9 @@ async def send_payslip(
                 "status": send_status,
                 "error": error,
             })
+
+        # 모든 토큰 추가 + 발송 완료 후 디스크 백업 (배포/재시작 후 복원용)
+        _save_tokens_to_disk()
 
         return {
             "ok": True,
