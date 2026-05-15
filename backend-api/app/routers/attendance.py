@@ -149,11 +149,19 @@ async def process_attendance(
     if not pdf.filename or not excel.filename:
         raise HTTPException(400, "PDF와 Excel 파일이 모두 필요합니다.")
 
+    # company_id 화이트리스트 검증 — 등록되지 않은 회사는 거부
+    company_id_normalized = (company_id or "").strip().lower()
+    if company_id_normalized and company_id_normalized not in COMPANY_LABELS:
+        raise HTTPException(
+            403,
+            f"등록되지 않은 회사: {company_id}. 허용 회사: {sorted(COMPANY_LABELS.keys())}"
+        )
+
     user_holidays = _parse_holidays(holidays)
     sheet_name_final = sheet_name.strip() if sheet_name and sheet_name.strip() else None
 
     t0 = time.time()
-    company_label = COMPANY_LABELS.get((company_id or "").strip().lower(), "")
+    company_label = COMPANY_LABELS.get(company_id_normalized, "")
     _log(f"=== START process_attendance year={year} month={month} company={company_id or '(none)'} ===")
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="attendance_"))

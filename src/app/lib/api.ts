@@ -5,9 +5,20 @@
  */
 import { sanitizeInput, fetchWithTimeout, isTokenExpired } from "./security";
 
-// ──── 환경 설정 (환경변수 우선, 폴백값 유지) ────
+// ──── 환경 설정 ────
+// Vercel 환경변수 (VITE_SUPABASE_PROJECT_ID, VITE_SUPABASE_ANON_KEY) 우선 사용.
+// anon key는 Supabase RLS로 보호되어 공개 자체는 안전하나, 환경변수로 관리해야 키 회전 시 빌드만 다시.
+// 폴백 값은 환경변수 미설정 시 서비스 중단 방지용 (점진적 마이그레이션 단계).
 const SUPABASE_PROJECT_ID = import.meta.env.VITE_SUPABASE_PROJECT_ID || "ldgbxbutwxiixatlfpgq";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxkZ2J4YnV0d3hpaXhhdGxmcGdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNDE3NjgsImV4cCI6MjA4ODgxNzc2OH0.oRgpDESfx0_urvz5GKL1lSF4LVSQhjcNPH7L5XMjLOM";
+
+if (!import.meta.env.VITE_SUPABASE_ANON_KEY && import.meta.env.PROD) {
+  // 프로덕션 빌드에서 환경변수 누락 경고 (개발 콘솔)
+  console.warn(
+    "[보안 권장] VITE_SUPABASE_ANON_KEY 환경변수 미설정 — 코드 폴백 사용 중. " +
+    "Vercel Project Settings → Environment Variables 에서 등록 후 폴백 제거 권장."
+  );
+}
 
 const BASE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/make-server-c3ee322d`;
 

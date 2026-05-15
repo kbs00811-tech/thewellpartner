@@ -2,6 +2,7 @@
  * 보안 유틸리티 모듈
  * XSS 방지, Rate Limiting, 입력 검증
  */
+import DOMPurify from "dompurify";
 
 // ──── XSS Sanitize ────
 const HTML_ESCAPE_MAP: Record<string, string> = {
@@ -14,6 +15,19 @@ const HTML_ESCAPE_MAP: Record<string, string> = {
 
 export function sanitizeHtml(str: string): string {
   return str.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch] || ch);
+}
+
+/**
+ * DOMPurify로 HTML 안전화 — script/iframe/on* 등 위험 요소 제거하고 안전한 태그만 유지.
+ * 명세서/계약서 미리보기 등 합법 HTML을 렌더링할 때 사용.
+ * dangerouslySetInnerHTML 사용 직전 반드시 호출.
+ */
+export function sanitizeHtmlContent(html: string): string {
+  return DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ["script", "iframe", "object", "embed", "form"],
+    FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover", "onfocus", "formaction"],
+  });
 }
 
 export function sanitizeInput(value: unknown): unknown {

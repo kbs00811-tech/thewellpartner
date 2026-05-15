@@ -65,16 +65,24 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """
     잡히지 않은 예외 → 500 응답.
-    CORS 헤더 + 트레이스백을 응답에 포함해서 브라우저에서 진짜 에러 메시지 확인 가능하게.
+    프로덕션 환경에서는 traceback 숨김 (내부 경로/모듈 노출 방지).
+    개발 환경(ENV=development 또는 미설정)에서는 디버깅 위해 traceback 포함.
     """
+    import uuid
+    env = os.environ.get("ENV", "development").lower()
+    error_id = uuid.uuid4().hex[:12]
     tb = traceback.format_exc()
-    response = JSONResponse(
-        status_code=500,
-        content={
-            "detail": f"서버 오류: {type(exc).__name__}: {str(exc)}",
-            "traceback": tb[-2000:],  # 너무 길지 않게
-        },
-    )
+    # 서버 로그에는 항상 전체 traceback 남김 (Render Logs에서 확인 가능)
+    print(f"[ERROR {error_id}] {type(exc).__name__}: {exc}\n{tb}", flush=True)
+
+    content = {
+        "detail": f"서버 오류: {type(exc).__name__}",
+        "error_id": error_id,
+    }
+    if env != "production":
+        content["debug_message"] = str(exc)
+        content["traceback"] = tb[-2000:]
+    response = JSONResponse(status_code=500, content=content)
     return _add_cors_headers_if_needed(request, response)
 
 

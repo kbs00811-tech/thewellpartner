@@ -1,6 +1,7 @@
 """
 어드민 토큰 검증 — Supabase Edge Function의 X-Admin-Token 패턴과 동일
 """
+import hmac
 import os
 from typing import Optional
 from fastapi import HTTPException
@@ -12,6 +13,7 @@ def verify_admin_token(x_admin_token: Optional[str], authorization: Optional[str
     설정되지 않았으면 (개발 모드) 통과.
 
     토큰은 X-Admin-Token 헤더 우선, 없으면 Authorization Bearer 토큰.
+    hmac.compare_digest 사용 — 시간공격(timing attack) 회피.
     """
     expected = os.environ.get("ADMIN_API_TOKEN", "").strip()
     if not expected:
@@ -25,5 +27,6 @@ def verify_admin_token(x_admin_token: Optional[str], authorization: Optional[str
         if len(parts) == 2 and parts[0].lower() == "bearer":
             provided = parts[1].strip()
 
-    if provided != expected:
+    # 시간공격 회피 — 길이 다르면 즉시 False 그래도 안전 (expected 길이 자체는 환경변수라 공격자가 모름)
+    if not hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(401, "유효하지 않은 관리자 토큰입니다.")

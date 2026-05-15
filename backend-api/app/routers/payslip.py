@@ -160,6 +160,10 @@ async def send_payslip(
         targets = [emps_by_no[n] for n in req.employee_nos if n in emps_by_no]
         _log(f"send: 대상 {len(targets)}명 / channel={req.channel}")
 
+        # xlsx 한 번만 읽어 메모리에 보관 (직원당 반복 X)
+        with open(xlsx_path, "rb") as f:
+            xlsx_bytes_cached = f.read()
+
         # 직원별 토큰 발급
         results = []
         base_url = os.environ.get("PAYSLIP_BASE_URL", "https://thewellpartner.com").rstrip("/")
@@ -171,7 +175,7 @@ async def send_payslip(
                 "year": req.year,
                 "month": req.month,
                 "company_id": req.company_id,
-                "xlsx_bytes": open(xlsx_path, "rb").read(),  # 메모리 — 작은 파일이라 OK
+                "xlsx_bytes": xlsx_bytes_cached,  # 캐시된 bytes 공유
                 "expires_at": time.time() + TOKEN_TTL,
             }
             url = f"{base_url}/payslip/{token}"

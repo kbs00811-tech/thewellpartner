@@ -6,6 +6,7 @@ import { handleError, handleSuccess } from "../../lib/error-handler";
 import { renderDetailedBilling, generatePDFFromHTML, downloadPDF } from "../../lib/documents/templates";
 import type { DetailedBillingData, CompanyInfo } from "../../lib/documents/types";
 import { parsePDFAttendance, classifyHours } from "../../lib/documents/pdfParser";
+import { sanitizeHtmlContent } from "../../lib/security";
 
 // 엑셀 → DetailedBillingData 변환
 function parseExcelToBilling(workbook: XLSX.WorkBook): DetailedBillingData | null {
@@ -533,7 +534,7 @@ export default function AdminBillingImport() {
               <h3 className="text-base sm:text-lg font-bold">미리보기 (A4 가로)</h3>
               <button onClick={() => setPreviewHTML(null)} className="text-gray-400 hover:text-gray-600 p-2 -m-2">✕</button>
             </div>
-            <div className="overflow-auto p-2 sm:p-4 flex-1" dangerouslySetInnerHTML={{ __html: previewHTML }} />
+            <div className="overflow-auto p-2 sm:p-4 flex-1" dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(previewHTML) }} />
           </div>
         </div>
       )}

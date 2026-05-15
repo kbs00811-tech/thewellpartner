@@ -5,6 +5,7 @@ import { handleError, handleSuccess } from "../../lib/error-handler";
 import { CONTRACT_TYPE_LABEL, CONTRACT_TYPE_DESC } from "../../lib/documents/types";
 import type { ContractType, ContractData, InvoiceData, TaxInvoiceData, CompanyInfo, ClientInfo } from "../../lib/documents/types";
 import { renderContract, renderInvoice, renderTaxInvoice, generatePDFFromHTML, downloadPDF } from "../../lib/documents/templates";
+import { sanitizeHtmlContent } from "../../lib/security";
 
 type DocType = "contract" | "invoice" | "tax-invoice";
 
@@ -617,7 +618,7 @@ export default function AdminContractDocs() {
               <h3 className="text-base sm:text-lg font-bold text-[var(--brand-navy)]">미리보기</h3>
               <button onClick={() => setPreviewHTML(null)} className="text-gray-400 hover:text-gray-600 p-2 -m-2">✕</button>
             </div>
-            <div className="overflow-auto p-2 sm:p-4 flex-1 flex justify-center" dangerouslySetInnerHTML={{ __html: previewHTML }} />
+            <div className="overflow-auto p-2 sm:p-4 flex-1 flex justify-center" dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(previewHTML) }} />
           </div>
         </div>
       )}
