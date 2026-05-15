@@ -140,13 +140,21 @@ export default function Contact() {
           </div>
 
           {submitted ? (
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl p-12 border border-gray-100 shadow-sm text-center">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl p-8 md:p-12 border border-gray-100 shadow-sm text-center">
               <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6" style={{ backgroundColor: "var(--brand-sky)" }}>
                 <CheckCircle2 size={40} style={{ color: "var(--brand-blue)" }} />
               </div>
               <h3 className="text-2xl font-bold mb-3" style={{ color: "var(--brand-navy)" }}>문의가 접수되었습니다!</h3>
-              <p className="text-gray-500 mb-8">담당자가 확인 후 빠른 시일 내에 연락드리겠습니다.</p>
-              <button onClick={resetForm} className="px-8 py-3 rounded-xl font-semibold text-white" style={{ backgroundColor: "var(--brand-blue)" }}>추가 문의하기</button>
+              <p className="text-gray-600 mb-2 leading-relaxed">담당자가 확인 후 <strong className="text-[var(--brand-blue)]">평일 1~2일 내</strong>에 연락드립니다.</p>
+              <div className="bg-blue-50 rounded-xl p-4 mb-6 text-left max-w-md mx-auto">
+                <p className="text-sm font-semibold text-blue-900 mb-2">📌 다음 단계 안내</p>
+                <ul className="text-xs text-blue-800 space-y-1.5">
+                  <li>1. 담당자가 입력하신 연락처로 전화/이메일로 연락</li>
+                  <li>2. 상세 상담 후 견적/조건 안내</li>
+                  <li>3. 긴급한 경우 1666-7663으로 직접 문의 가능</li>
+                </ul>
+              </div>
+              <button onClick={resetForm} className="px-8 py-3 rounded-xl font-semibold text-white transition-all hover:shadow-lg" style={{ backgroundColor: "var(--brand-blue)" }}>추가 문의하기</button>
             </motion.div>
           ) : (
             <>

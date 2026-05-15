@@ -226,7 +226,25 @@ export default function Recruit() {
                     </motion.div>
                   ))}
                   {filteredJobs.length === 0 && !loading && (
-                    <div className="text-center py-20"><p className="text-gray-400">해당 조건에 맞는 채용공고가 없습니다.</p></div>
+                    <div className="text-center py-16 sm:py-20 max-w-md mx-auto">
+                      <div className="w-20 h-20 mx-auto mb-5 rounded-full bg-blue-50 flex items-center justify-center">
+                        <Briefcase size={32} style={{ color: "var(--brand-blue)" }} />
+                      </div>
+                      <h3 className="text-lg font-bold mb-2" style={{ color: "var(--brand-navy)" }}>
+                        현재 채용 예정 공고를 준비 중입니다
+                      </h3>
+                      <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+                        새로운 일자리는 수시로 업데이트되고 있습니다.<br />
+                        관심 분야가 있으시면 미리 문의해주세요.
+                      </p>
+                      <a
+                        href="/contact?type=jobseeker"
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold transition-all hover:shadow-lg"
+                        style={{ backgroundColor: "var(--brand-blue)" }}
+                      >
+                        구직 문의하기 <ArrowRight size={16} />
+                      </a>
+                    </div>
                   )}
                 </div>
               )}
