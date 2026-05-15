@@ -329,44 +329,212 @@ async def get_payslip_data(token: str):
 
 
 def _extract_payslip_data(xlsx_path: str, employee_no: int, year: int, month: int) -> dict:
-    """양식 xlsx에서 특정 직원의 명세서 데이터 추출 (지급 내역 + DB + 근태 시트)"""
-    wb = load_workbook(xlsx_path, data_only=True, read_only=True, keep_links=False)
+    """양식 xlsx에서 특정 직원의 명세서 데이터 추출.
+
+    지급 내역 시트 컬럼 매핑 (D=직원명 키, R10=헤더, R11+=데이터):
+      P=기본급(16) Q=잔업(17) R=심야(18) S=특근(19) T=특잔(20) U=지각조퇴(21)
+      V=식대(22) W=교통비(23) X=연차(24) Y=원단(25) AA=퇴직금(27)
+      AC=직접비소계(29)
+      AD=국민연금(30) AE=건강보험(31) AF=노인장기(32) AG=고용보험(33) AH=4대보험합계(34)
+      AJ=소득세(36) AK=가불금(37) AL=실수령(38)
+    """
+    def _num(v):
+        """숫자 정규화 (수식 캐시 빈 결과는 0)"""
+        if v is None or v == "":
+            return 0
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return 0
+
+    def _str(v):
+        if v is None:
+            return ""
+        if isinstance(v, datetime):
+            return v.strftime("%Y-%m-%d")
+        return str(v).strip()
+
+    wb = load_workbook(xlsx_path, data_only=True, read_only=False, keep_links=False)
     try:
         result = {
             "year": year,
             "month": month,
-            "soc": {},      # 소속/은행/계좌 등
-            "pay": {},      # 급여 현황 (기본/연장/심야/특근/특잔/지각/기타수당)
-            "deduct": {},   # 공제 현황
-            "attendance": {},  # 일자별 출퇴근
+            "soc": {},
+            "pay": {},
+            "deduct": {},
+            "attendance": [],  # [{day, basic, ot, night, sat, sat_ot, late}]
         }
 
-        # DB 시트에서 직원 정보
+        # === 1. DB 시트에서 직원 기본 정보 ===
+        emp_name = ""
         if "DB" in wb.sheetnames:
             ws = wb["DB"]
             row = employee_no + 1  # NO=1 → R2
             if 2 <= row <= ws.max_row:
-                hire = ws.cell(row, 5).value
-                resign = ws.cell(row, 6).value
+                emp_name = _str(ws.cell(row, 2).value)
                 result["soc"] = {
-                    "name": ws.cell(row, 2).value,
-                    "hire_date": hire.strftime("%Y-%m-%d") if isinstance(hire, datetime) else (str(hire) if hire else ""),
-                    "resign_date": resign.strftime("%Y-%m-%d") if isinstance(resign, datetime) else (str(resign) if resign else ""),
-                    "rate": ws.cell(row, 3).value,
-                    "bank": ws.cell(row, 11).value,
-                    "account": ws.cell(row, 12).value,
+                    "name": emp_name,
+                    "hire_date": _str(ws.cell(row, 5).value),
+                    "resign_date": _str(ws.cell(row, 6).value),
+                    "rate": _num(ws.cell(row, 3).value),
+                    "bank": _str(ws.cell(row, 11).value),
+                    "account": _str(ws.cell(row, 12).value),
                 }
 
-        # 지급 내역에서 급여/공제 (직원 번호로 행 찾기)
+        # === 2. 지급 내역 시트에서 직원 행 찾고 급여/공제 추출 ===
+        # 우선 캐시된 값 시도 (Excel 한번 열어 저장한 경우)
         pay_sheet_name = next((s for s in wb.sheetnames if "지급" in s), None)
-        if pay_sheet_name:
-            ws = wb[pay_sheet_name]
-            for r in range(1, ws.max_row + 1):
-                no_cell = ws.cell(r, 3).value  # C열 NO
-                if no_cell == employee_no:
-                    # AH~AL 열에서 급여/공제 데이터 (수식 결과)
-                    # 정확한 컬럼 매핑은 양식별로 조정 필요
-                    break
+        pay_values_from_cache = False
+        if pay_sheet_name and emp_name:
+            ws_pay = wb[pay_sheet_name]
+            target_row = None
+            # 두 가지 방식 시도: 1) D열 값 매칭, 2) NO 기반 위치 (R10+no)
+            try:
+                for r in range(11, min(ws_pay.max_row + 1, 50)):
+                    d_val = _str(ws_pay.cell(r, 4).value)
+                    if d_val == emp_name:
+                        target_row = r
+                        break
+            except Exception:
+                pass
+            if target_row is None:
+                # NO 기반 fallback: R11=NO 1
+                target_row = 10 + employee_no
+
+            if target_row and target_row <= ws_pay.max_row:
+                r = target_row
+                cached_basic = _num(ws_pay.cell(r, 16).value)
+                if cached_basic > 0:
+                    pay_values_from_cache = True
+                    result["pay"] = {
+                        "basic": cached_basic,
+                        "overtime": _num(ws_pay.cell(r, 17).value),
+                        "night": _num(ws_pay.cell(r, 18).value),
+                        "saturday": _num(ws_pay.cell(r, 19).value),
+                        "sat_ot": _num(ws_pay.cell(r, 20).value),
+                        "late": _num(ws_pay.cell(r, 21).value),
+                        "meal": _num(ws_pay.cell(r, 22).value),
+                        "transport": _num(ws_pay.cell(r, 23).value),
+                        "annual_leave": _num(ws_pay.cell(r, 24).value),
+                        "shift": _num(ws_pay.cell(r, 25).value),
+                        "retirement": _num(ws_pay.cell(r, 27).value),
+                        "subtotal": _num(ws_pay.cell(r, 29).value),
+                    }
+                    result["deduct"] = {
+                        "pension": _num(ws_pay.cell(r, 30).value),
+                        "health": _num(ws_pay.cell(r, 31).value),
+                        "longterm": _num(ws_pay.cell(r, 32).value),
+                        "employment": _num(ws_pay.cell(r, 33).value),
+                        "insurance_total": _num(ws_pay.cell(r, 34).value),
+                        "income_tax": _num(ws_pay.cell(r, 36).value),
+                        "loan": _num(ws_pay.cell(r, 37).value),
+                    }
+                    result["net_pay"] = _num(ws_pay.cell(r, 38).value)
+                    result["deduct_total"] = (
+                        result["deduct"]["insurance_total"]
+                        + result["deduct"]["income_tax"]
+                        + result["deduct"]["loan"]
+                    )
+
+        # === 3. 근태 시트에서 일자별 출퇴근 + 시간 합계 (캐시 없을 때 직접 계산용) ===
+        att_sheet = next((s for s in wb.sheetnames if f"근태 ( {month}" in s), None)
+        if not att_sheet:
+            att_sheet = next((s for s in wb.sheetnames if "근태" in s and "월" in s), None)
+
+        hours = {"basic": 0.0, "overtime": 0.0, "night": 0.0, "saturday": 0.0, "sat_ot": 0.0, "late": 0.0}
+        if att_sheet and emp_name:
+            ws_att = wb[att_sheet]
+            BASIC = {"기본", "기본근무", "정상"}
+            target_base_row = None
+            # NO 기반 위치 추정 — 양식: R7=NO 1 기본행, 6행 블록
+            estimated_row = 1 + (employee_no - 1) * 6 + 6  # NO=1 → R7
+            # 우선 NO 기반, 안 맞으면 D열 매칭
+            try:
+                f_val = _str(ws_att.cell(estimated_row, 6).value)
+                if f_val in BASIC:
+                    target_base_row = estimated_row
+            except Exception:
+                pass
+            if target_base_row is None:
+                for r in range(1, min(ws_att.max_row + 1, 250)):
+                    d_val = _str(ws_att.cell(r, 4).value)
+                    f_val = _str(ws_att.cell(r, 6).value)
+                    if d_val == emp_name and f_val in BASIC:
+                        target_base_row = r
+                        break
+
+            if target_base_row:
+                LABELS = ["basic", "overtime", "night", "saturday", "sat_ot", "late"]
+                for day in range(1, 32):
+                    col = 7 + day  # H=8(1일), AL=38(31일)
+                    day_data = {"day": day}
+                    has_any = False
+                    for off, key in enumerate(LABELS):
+                        v = ws_att.cell(target_base_row + off, col).value
+                        if v not in (None, ""):
+                            day_data[key] = v
+                            has_any = True
+                            # 시간 합계 (숫자만)
+                            try:
+                                hours[key] += float(v)
+                            except (ValueError, TypeError):
+                                pass
+                    if has_any:
+                        result["attendance"].append(day_data)
+
+        result["hours"] = hours
+
+        # === 4. 캐시 값 없으면 직접 계산 (시급 × 시간 × 배율) ===
+        if not pay_values_from_cache and result["soc"].get("rate"):
+            rate = result["soc"]["rate"]
+            def rounddown(v, digits=-1):
+                """엑셀 ROUNDDOWN(-1) = 10원 단위 내림"""
+                if digits == -1:
+                    return int(v // 10) * 10
+                return int(v)
+
+            basic_pay = rounddown(rate * hours["basic"])
+            ot_pay = rounddown(rate * hours["overtime"] * 1.5)
+            night_pay = rounddown(rate * hours["night"] * 0.5)
+            sat_pay = rounddown(rate * hours["saturday"] * 1.5)
+            sat_ot_pay = rounddown(rate * hours["sat_ot"] * 2)
+            late_pay = rounddown(rate * hours["late"])  # 지각조퇴는 음수
+            subtotal = basic_pay + ot_pay + night_pay + sat_pay + sat_ot_pay + late_pay
+
+            result["pay"] = {
+                "basic": basic_pay,
+                "overtime": ot_pay,
+                "night": night_pay,
+                "saturday": sat_pay,
+                "sat_ot": sat_ot_pay,
+                "late": late_pay,
+                "subtotal": subtotal,
+                # 식대/교통비/연차/원단/퇴직금은 캐시 없으면 0 (회사별 룰)
+                "meal": 0, "transport": 0, "annual_leave": 0,
+                "shift": 0, "retirement": 0,
+            }
+
+            # 4대 보험 자체 계산 (대략)
+            pension = rounddown(subtotal * 0.0475 if subtotal > 0 else 0)
+            health = rounddown(subtotal * 0.03595 if subtotal > 0 else 0)
+            longterm = rounddown(health * 0.1314 if health > 0 else 0)
+            employment = rounddown(subtotal * 0.009 if subtotal > 0 else 0)
+            insurance_total = pension + health + longterm + employment
+
+            result["deduct"] = {
+                "pension": pension,
+                "health": health,
+                "longterm": longterm,
+                "employment": employment,
+                "insurance_total": insurance_total,
+                "income_tax": 0,
+                "loan": 0,
+            }
+            result["deduct_total"] = insurance_total
+            result["net_pay"] = subtotal - insurance_total
+            result["data_source"] = "계산값 (Excel 미평가)"
+        else:
+            result["data_source"] = "양식 평가값"
 
         return result
     finally:
