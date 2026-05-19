@@ -37,6 +37,17 @@
       }
     </script>
 
+    <!-- Naver Analytics (네이버 애널리틱스) -->
+    <!-- 어드민 페이지는 추적 제외, 첫 로드만 wcs_do() — SPA 라우팅은 Root.tsx에서 처리 -->
+    <script type="text/javascript" src="//wcs.pstatic.net/wcslog.js"></script>
+    <script type="text/javascript">
+      if(!window.wcs_add) window.wcs_add = {};
+      window.wcs_add["wa"] = "2def2b9d547962";
+      if (window.wcs && !location.pathname.startsWith('/manage-twp')) {
+        window.wcs_do();
+      }
+    </script>
+
     <!-- Favicons -->
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
