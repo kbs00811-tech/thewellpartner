@@ -11,7 +11,7 @@ import {
   ClipboardList, Building2, Image, HelpCircle, Megaphone, UserCheck, Database,
   TrendingUp, FileCheck, Shield, History, KeyRound, MonitorSmartphone, Factory,
   MapPin, ArrowLeftRight, CalendarCheck, Globe2, FileSpreadsheet, Lock,
-  X, Loader2, Eye, EyeOff, CheckCircle2, AlertTriangle, Package,
+  X, Loader2, Eye, EyeOff, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 import { LogoIcon } from "./Logo";
 import { TableSkeleton } from "./PageSkeleton";
@@ -37,10 +37,12 @@ interface MenuItem {
 
 const A = ADMIN_BASE;
 
-// 업체별 처리 메뉴 (companies.ts 기반 동적 생성)
-const companyMenuChildren: MenuChild[] = getActiveCompanies().map((c) => ({
-  name: c.name,
+// 업체별 처리 메뉴 — 회사별로 독립된 최상위 메뉴로 분리 (companies.ts 기반 동적 생성)
+// 엘티와이 / 엘컴텍 등 각 업체가 고유 메뉴 그룹을 가져 입력 지침이 섞이지 않도록 함.
+const companyMenuItems: MenuItem[] = getActiveCompanies().map((c) => ({
+  name: `🏢 ${c.name}`,
   icon: Building2,
+  permKey: "erp",
   children: [
     { name: "① 근태 자동입력 (지급파일 생성)", path: `${A}/company/${c.id}/attendance-import`, icon: ClipboardList },
     { name: "② 청구서 PDF 출력", path: `${A}/company/${c.id}/billing-import`, icon: FileSpreadsheet },
@@ -100,10 +102,8 @@ const menuItems: MenuItem[] = [
       { name: "계약·청구 양식", path: `${A}/contract-docs`, icon: FileText },
     ],
   },
-  {
-    name: "업체별 처리", icon: Package, permKey: "erp",
-    children: companyMenuChildren,
-  },
+  // 업체별 처리 — 회사마다 독립 메뉴 (엘티와이 / 엘컴텍 분리)
+  ...companyMenuItems,
   {
     name: "외국인 인력관리", icon: Globe2, permKey: "foreign",
     children: [

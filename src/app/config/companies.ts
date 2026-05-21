@@ -25,9 +25,22 @@ export const COMPANIES: CompanyConfig[] = [
     description: "(주)엘티와이 출근부 자동입력",
     active: true,
   },
+  {
+    id: "elcomtec",
+    name: "엘컴텍",
+    description: "(주)엘컴텍 근태대장(응원봉·영업) 자동입력 — PDF 여러 개 업로드",
+    active: true,
+  },
   // 새 회사 추가 예시:
   // { id: "samsung", name: "삼성", description: "...", active: true },
 ];
+
+/** 근태대장 포맷(다중 PDF·전용 파서)을 쓰는 업체 */
+export const ELCOMTEC_STYLE_COMPANIES = new Set(["elcomtec"]);
+
+export function isElcomtecStyle(id?: string): boolean {
+  return !!id && ELCOMTEC_STYLE_COMPANIES.has(id);
+}
 
 export function getCompany(id: string): CompanyConfig | undefined {
   return COMPANIES.find((c) => c.id === id);

@@ -525,6 +525,71 @@ export const attendanceApi = {
   },
 
   /**
+   * 엘컴텍 전용 — 여러 PDF(응원봉·영업) + Excel → 근태 자동입력.
+   * 응답: { blob, filename, summary }
+   */
+  processElcomtec: async (params: {
+    pdfs: File[];
+    excel: File;
+    year: number;
+    month: number;
+    sheetName?: string;
+    companyId?: string;
+  }): Promise<{ blob: Blob; filename: string; summary: AttendanceProcessResult }> => {
+    const token = getToken();
+    const formData = new FormData();
+    for (const f of params.pdfs) formData.append("pdfs", f);
+    formData.append("excel", params.excel);
+    formData.append("year", String(params.year));
+    formData.append("month", String(params.month));
+    if (params.sheetName) formData.append("sheet_name", params.sheetName);
+    formData.append("company_id", params.companyId || "elcomtec");
+
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(`${ATTENDANCE_API_URL}/api/attendance/process-elcomtec`, {
+        method: "POST",
+        headers: { ...(token ? { "X-Admin-Token": token } : {}) },
+        body: formData,
+        timeout: 300_000,
+      });
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        throw new ApiError("처리 시간이 5분을 초과했습니다. 1분 후 다시 시도해주세요.", 0, "TIMEOUT");
+      }
+      throw new ApiError("처리 서버에 연결할 수 없습니다.", 0, "NETWORK");
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new ApiError(err.detail || `처리 실패 (${res.status})`, res.status, "PROCESS_ERROR");
+    }
+
+    let summary: AttendanceProcessResult;
+    const summaryHex = res.headers.get("X-Process-Result") || "";
+    try {
+      const bytes = new Uint8Array(summaryHex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+      summary = JSON.parse(new TextDecoder("utf-8").decode(bytes));
+    } catch {
+      summary = {
+        pdf_meta: { year: null, month: null, total_employees: 0, raw_pages: 0 },
+        attendance: { filled_employees: 0, total_cells: 0, missing: [] },
+        leave: { filled_employees: 0, missing: [] },
+        validation: {},
+        validation_ok: true,
+        review_count: 0,
+      };
+    }
+
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const fnMatch = disposition.match(/filename\*=UTF-8''([^;]+)/) || disposition.match(/filename="?([^"]+)"?/);
+    const filename = fnMatch ? decodeURIComponent(fnMatch[1]) : `엘컴텍_${params.year}-${String(params.month).padStart(2, "0")}_지급파일.xlsx`;
+
+    const blob = await res.blob();
+    return { blob, filename, summary };
+  },
+
+  /**
    * PDF만 미리보기 (엑셀 처리 X)
    */
   preview: async (pdf: File) => {

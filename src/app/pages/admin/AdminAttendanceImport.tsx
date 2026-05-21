@@ -12,14 +12,16 @@ import {
 } from "lucide-react";
 import { attendanceApi, AttendanceProcessResult } from "../../lib/api";
 import { handleError, handleSuccess } from "../../lib/error-handler";
-import { getCompany } from "../../config/companies";
+import { getCompany, isElcomtecStyle } from "../../config/companies";
 
 const today = new Date();
 
 export default function AdminAttendanceImport() {
   const { companyId } = useParams();
   const company = companyId ? getCompany(companyId) : undefined;
+  const isElcomtec = isElcomtecStyle(companyId);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfFiles, setPdfFiles] = useState<File[]>([]); // 엘컴텍: 다중 PDF
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState<AttendanceProcessResult | null>(null);
@@ -62,6 +64,19 @@ export default function AdminAttendanceImport() {
     setPdfFile(file);
   };
 
+  const handlePdfsSelect = (files: FileList | File[]) => {
+    const arr = Array.from(files).filter((f) => f.name.endsWith(".pdf"));
+    if (arr.length === 0) {
+      handleError(new Error("PDF 파일만 업로드 가능합니다."));
+      return;
+    }
+    setPdfFiles((prev) => {
+      const map = new Map(prev.map((f) => [f.name, f]));
+      for (const f of arr) map.set(f.name, f);
+      return Array.from(map.values());
+    });
+  };
+
   const handleExcelSelect = (file: File) => {
     if (!file.name.endsWith(".xlsx")) {
       handleError(new Error("xlsx 파일만 업로드 가능합니다."));
@@ -71,7 +86,12 @@ export default function AdminAttendanceImport() {
   };
 
   const handleProcess = async () => {
-    if (!pdfFile || !excelFile) {
+    if (isElcomtec) {
+      if (pdfFiles.length === 0 || !excelFile) {
+        handleError(new Error("PDF(1개 이상)와 Excel 파일을 업로드하세요."));
+        return;
+      }
+    } else if (!pdfFile || !excelFile) {
       handleError(new Error("PDF와 Excel 파일을 모두 업로드하세요."));
       return;
     }
@@ -89,27 +109,40 @@ export default function AdminAttendanceImport() {
       }
 
       const startTime = Date.now();
-      const { blob, filename, summary } = await attendanceApi.process({
-        pdf: pdfFile,
-        excel: excelFile,
-        year,
-        month,
-        holidays,
-        standardHours,
-        normalStart,
-        normalEnd,
-        sheetName: sheetName.trim() || undefined,
-        overwriteExisting,
-        companyId: company?.id,
-      });
+      const { blob, filename, summary } = isElcomtec
+        ? await attendanceApi.processElcomtec({
+            pdfs: pdfFiles,
+            excel: excelFile!,
+            year,
+            month,
+            sheetName: sheetName.trim() || undefined,
+            companyId: company?.id,
+          })
+        : await attendanceApi.process({
+            pdf: pdfFile!,
+            excel: excelFile!,
+            year,
+            month,
+            holidays,
+            standardHours,
+            normalStart,
+            normalEnd,
+            sheetName: sheetName.trim() || undefined,
+            overwriteExisting,
+            companyId: company?.id,
+          });
 
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       log(`✅ 처리 완료 (${elapsed}초)`);
       log(`📊 PDF: ${summary.pdf_meta.total_employees}명 인식`);
       log(`📊 근태 입력: ${summary.attendance.filled_employees}명 / ${summary.attendance.total_cells}셀`);
-      log(`📊 연차 입력: ${summary.leave.filled_employees}명`);
-      log(`🛡 수식 보존: ${summary.validation_ok ? "✅ OK" : "⚠️ 확인 필요"}`);
-      log(`   원본 ${summary.validation["원본_수식_개수"] || 0} → 결과 ${summary.validation["결과_수식_개수"] || 0}`);
+      if (isElcomtec) {
+        log(`📋 검토 항목: ${summary.review_count}건 (검토리스트 시트 확인)`);
+      } else {
+        log(`📊 연차 입력: ${summary.leave.filled_employees}명`);
+        log(`🛡 수식 보존: ${summary.validation_ok ? "✅ OK" : "⚠️ 확인 필요"}`);
+        log(`   원본 ${summary.validation["원본_수식_개수"] || 0} → 결과 ${summary.validation["결과_수식_개수"] || 0}`);
+      }
 
       if (summary.attendance.missing.length > 0) {
         log(`⚠️ 매칭 실패: ${summary.attendance.missing.join(", ")}`);
@@ -283,11 +316,15 @@ export default function AdminAttendanceImport() {
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
-                const f = e.dataTransfer.files[0];
-                if (f) handlePdfSelect(f);
+                if (isElcomtec) {
+                  if (e.dataTransfer.files.length) handlePdfsSelect(e.dataTransfer.files);
+                } else {
+                  const f = e.dataTransfer.files[0];
+                  if (f) handlePdfSelect(f);
+                }
               }}
               className={`border-2 border-dashed rounded-xl p-6 cursor-pointer transition ${
-                pdfFile
+                (isElcomtec ? pdfFiles.length > 0 : pdfFile)
                   ? "border-emerald-300 bg-emerald-50"
                   : "border-slate-300 hover:border-sky-400 bg-white"
               }`}
@@ -296,13 +333,37 @@ export default function AdminAttendanceImport() {
                 ref={pdfInputRef}
                 type="file"
                 accept=".pdf"
+                multiple={isElcomtec}
                 className="hidden"
-                onChange={(e) => e.target.files?.[0] && handlePdfSelect(e.target.files[0])}
+                onChange={(e) => {
+                  if (!e.target.files?.length) return;
+                  if (isElcomtec) handlePdfsSelect(e.target.files);
+                  else handlePdfSelect(e.target.files[0]);
+                }}
               />
               <div className="flex flex-col items-center text-center">
-                <FileText className={`w-10 h-10 mb-2 ${pdfFile ? "text-emerald-600" : "text-slate-400"}`} />
-                <div className="font-medium text-slate-900 text-sm">📄 PDF 출근부</div>
-                {pdfFile ? (
+                <FileText className={`w-10 h-10 mb-2 ${(isElcomtec ? pdfFiles.length > 0 : pdfFile) ? "text-emerald-600" : "text-slate-400"}`} />
+                <div className="font-medium text-slate-900 text-sm">
+                  📄 PDF 출근부 {isElcomtec && <span className="text-sky-600">(여러 개 가능)</span>}
+                </div>
+                {isElcomtec ? (
+                  pdfFiles.length > 0 ? (
+                    <div className="mt-1 text-xs text-emerald-700 space-y-0.5">
+                      {pdfFiles.map((f) => (
+                        <div key={f.name}>{f.name}</div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setPdfFiles([]); }}
+                        className="text-slate-400 underline"
+                      >
+                        전체 지우기
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-xs text-slate-500">응원봉·영업 PDF 모두 선택 (드래그/클릭)</div>
+                  )
+                ) : pdfFile ? (
                   <div className="mt-1 text-xs text-emerald-700">{pdfFile.name}</div>
                 ) : (
                   <div className="mt-1 text-xs text-slate-500">드래그하거나 클릭</div>
@@ -347,7 +408,7 @@ export default function AdminAttendanceImport() {
           {/* 실행 버튼 */}
           <button
             onClick={handleProcess}
-            disabled={!pdfFile || !excelFile || processing}
+            disabled={(isElcomtec ? pdfFiles.length === 0 : !pdfFile) || !excelFile || processing}
             className="w-full py-3 bg-sky-600 text-white rounded-xl font-medium hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {processing ? (
@@ -358,7 +419,7 @@ export default function AdminAttendanceImport() {
             ) : (
               <>
                 <ArrowRight className="w-5 h-5" />
-                🚀 근태 + 연차 자동 입력 실행
+                {isElcomtec ? "🚀 근태 자동 입력 실행 (다중 PDF)" : "🚀 근태 + 연차 자동 입력 실행"}
               </>
             )}
           </button>

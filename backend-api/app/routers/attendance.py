@@ -108,7 +108,11 @@ def _normalize_xlsx_dimensions(path: str, max_row_cap: int = 5000) -> dict:
 # 업체별 표시명 — 결과 파일명·로그용. 신규 업체 추가 시 한 줄.
 COMPANY_LABELS: dict = {
     "lty": "엘티와이",
+    "elcomtec": "엘컴텍",
 }
+
+# 다중 PDF·전용 파서를 쓰는 업체 (근태대장 포맷 등)
+ELCOMTEC_COMPANIES = {"elcomtec"}
 
 
 @router.post("/process")
@@ -637,6 +641,173 @@ async def process_attendance(
         _log(f"=== UNEXPECTED ERROR at {time.time()-t0:.1f}s: {type(e).__name__}: {e} ===")
         _log(traceback.format_exc())
         raise HTTPException(500, f"처리 중 예기치 못한 에러: {type(e).__name__}: {e}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@router.post("/process-elcomtec")
+async def process_attendance_elcomtec(
+    pdfs: list[UploadFile] = File(...),
+    excel: UploadFile = File(...),
+    year: int = Form(...),
+    month: int = Form(...),
+    sheet_name: Optional[str] = Form(None),
+    company_id: str = Form("elcomtec"),
+    x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
+    authorization: Optional[str] = Header(None),
+):
+    """엘컴텍(근태대장 포맷) 전용 — 여러 PDF(응원봉·영업) + 양식 xlsx → 지급파일.
+
+    엘티와이 흐름과 분리(파서·룰 상이). 자동: 기본/연장/심야/특근/특잔 + 주휴 개근룰.
+    수동영역(검토리스트): 평일결근→연차/반차/휴무 분류, 지각조퇴 deduction.
+    """
+    from ..services.attendance_parser_elcomtec import parse_pdfs_elcomtec
+    from ..services.excel_writer_elcomtec import fill_attendance_sheet_elcomtec
+    from ..services.excel_writer import build_name_to_row_map, find_target_sheet
+
+    verify_admin_token(x_admin_token, authorization)
+
+    cid = (company_id or "elcomtec").strip().lower()
+    if cid not in COMPANY_LABELS:
+        raise HTTPException(403, f"등록되지 않은 회사: {company_id}")
+    if not pdfs or not excel.filename:
+        raise HTTPException(400, "PDF(1개 이상)와 Excel 파일이 필요합니다.")
+
+    t0 = time.time()
+    company_label = COMPANY_LABELS.get(cid, "")
+    _log(f"=== START process-elcomtec year={year} month={month} pdfs={len(pdfs)} ===")
+    sheet_name_final = sheet_name.strip() if sheet_name and sheet_name.strip() else None
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="elcomtec_"))
+    try:
+      try:
+        # 1. 파일 저장
+        pdf_paths: list[str] = []
+        for up in pdfs:
+            if not up.filename or not up.filename.lower().endswith(".pdf"):
+                raise HTTPException(400, f"PDF만 허용: {up.filename}")
+            p = tmp_dir / up.filename
+            with open(p, "wb") as f:
+                f.write(await up.read())
+            pdf_paths.append(str(p))
+        excel_orig_path = tmp_dir / excel.filename
+        with open(excel_orig_path, "wb") as f:
+            f.write(await excel.read())
+        out_name = f"{company_label}_{year:04d}-{month:02d}_지급파일.xlsx"
+        excel_out_path = tmp_dir / out_name
+        _log(f"Step 1 done [{time.time()-t0:.1f}s] pdfs={len(pdf_paths)}")
+
+        # 1.5 dimension 정상화
+        try:
+            fixes = _normalize_xlsx_dimensions(str(excel_orig_path))
+            _log(f"Step 1.5 normalize done (fixes={len(fixes)})")
+        except Exception as e:
+            _log(f"Step 1.5 skipped: {type(e).__name__}: {e}")
+
+        # 2. 직원명→행 매핑 (원본 VLOOKUP 캐시 기반)
+        from openpyxl import load_workbook as _lw
+        wb_probe = _lw(str(excel_orig_path), data_only=True, read_only=False, keep_links=False)
+        try:
+            sheet_used_probe = find_target_sheet(wb_probe, month, sheet_name_final)
+        finally:
+            wb_probe.close()
+        name_to_row = build_name_to_row_map(str(excel_orig_path), sheet_used_probe)
+        _log(f"Step 2 name_to_row: {len(name_to_row)}명 (sheet={sheet_used_probe})")
+
+        # 3. PDF 파싱
+        parsed, meta = parse_pdfs_elcomtec(pdf_paths)
+        _log(f"Step 3 PDF: {meta['total_employees']}명, pages={meta['raw_pages']}, parts={meta.get('parts')}")
+        if not parsed:
+            raise HTTPException(422, "PDF에서 직원 정보를 찾지 못했습니다.")
+
+        # 월 검증 경고
+        month_warning = None
+        if meta.get("month") and meta["month"] != month:
+            month_warning = f"⚠️ 입력 월({month}) ≠ PDF 월({meta['month']})"
+
+        # 4. 원본 복사 후 자동입력
+        shutil.copyfile(excel_orig_path, excel_out_path)
+        res = fill_attendance_sheet_elcomtec(
+            str(excel_out_path), parsed, year=year, month=month,
+            sheet_name=sheet_name_final, name_to_row=name_to_row,
+        )
+        wb = res["wb"]
+        _log(f"Step 4 fill done — {sum(res['stats'].values())}셀/{len(res['stats'])}명, 매칭실패={res['counters']['직원_매칭실패']}")
+
+        # 5. 검토리스트 시트
+        if "자동입력_검토리스트" not in wb.sheetnames:
+            wb.create_sheet("자동입력_검토리스트")
+        ws_r = wb["자동입력_검토리스트"]
+        ws_r.append([])
+        ws_r.append(["엘컴텍 처리 메타"])
+        ws_r.append(["대상연월", f"{year}-{month:02d}"])
+        ws_r.append(["사용시트", res["sheet_used"]])
+        ws_r.append(["PDF 파트", ", ".join(meta.get("parts", []))])
+        ws_r.append(["PDF 직원수", str(meta["total_employees"])])
+        if month_warning:
+            ws_r.append(["월불일치", month_warning])
+        ws_r.append([])
+        ws_r.append(["카운터 요약"])
+        for k, v in res["counters"].items():
+            ws_r.append([k, str(v)])
+        if res["missing"]:
+            ws_r.append([])
+            ws_r.append([f"매칭 실패 ({len(res['missing'])}명) — 근태시트에 이름 없음"])
+            for nm in res["missing"]:
+                ws_r.append([nm])
+        ws_r.append([])
+        ws_r.append([f"검토 항목 ({len(res['review_list'])}건) — 수동 확인 필요"])
+        ws_r.append(["구분", "성명", "일자", "요일", "PDF원문", "입력값", "메시지"])
+        for r in res["review_list"]:
+            ws_r.append([
+                r.get("구분", ""), r.get("성명", ""), r.get("일자", ""),
+                r.get("요일", ""), r.get("PDF원문", ""), str(r.get("입력값", "")),
+                r.get("메시지", ""),
+            ])
+
+        wb.save(str(excel_out_path))
+        with open(excel_out_path, "rb") as f:
+            content = f.read()
+        _log(f"=== SUCCESS elcomtec — total {time.time()-t0:.1f}s, size={len(content)/1024:.1f}KB ===")
+
+        result_summary = {
+            "pdf_meta": {
+                "year": meta.get("year"), "month": meta.get("month"),
+                "total_employees": meta.get("total_employees"),
+                "raw_pages": meta.get("raw_pages"), "parts": meta.get("parts", []),
+            },
+            "target": {"year": year, "month": month, "sheet_used": res["sheet_used"],
+                       "month_warning": month_warning},
+            "attendance": {
+                "filled_employees": len(res["stats"]),
+                "total_cells": sum(res["stats"].values()),
+                "missing": res["missing"],
+                "counters": res["counters"],
+            },
+            # 공유 결과 패널 호환용 stub (엘컴텍은 연차 자동입력·수식검증 미사용)
+            "leave": {"filled_employees": 0, "missing": [], "skipped": True},
+            "validation": {},
+            "validation_ok": True,
+            "review_count": len(res["review_list"]),
+        }
+        from urllib.parse import quote
+        encoded_summary = json.dumps(result_summary, ensure_ascii=False)
+        utf8_filename = quote(excel_out_path.name, safe="")
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename=\"result.xlsx\"; filename*=UTF-8''{utf8_filename}",
+                "X-Process-Result": encoded_summary.encode("utf-8").hex(),
+                "Access-Control-Expose-Headers": "X-Process-Result, Content-Disposition",
+            },
+        )
+      except HTTPException:
+        raise
+      except Exception as e:
+        _log(f"=== elcomtec ERROR {time.time()-t0:.1f}s: {type(e).__name__}: {e} ===")
+        _log(traceback.format_exc())
+        raise HTTPException(500, f"엘컴텍 처리 실패: {type(e).__name__}: {e}")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
