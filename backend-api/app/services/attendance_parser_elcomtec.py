@@ -24,6 +24,11 @@ logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
 def _col_of(x: float) -> Optional[str]:
     """단어 x0 좌표 → 논리 컬럼명. 엘컴텍 근태대장 고정 레이아웃 기준."""
+    # 실/인정 출퇴근 시각 (지각·조퇴 계산 기준 — 인정근무시간보다 우선)
+    if 218 <= x <= 240: return "실출근"
+    if 245 <= x <= 265: return "실퇴근"
+    if 273 <= x <= 295: return "인정출근"
+    if 298 <= x <= 318: return "인정퇴근"
     if 385 <= x <= 405: return "간"        # 인정근무시간
     if 415 <= x <= 432: return "평_조기"
     if 440 <= x <= 455: return "평_기본"
