@@ -6,7 +6,7 @@
  */
 import { useEffect, useCallback, useRef, useState } from "react";
 import * as api from "../lib/api";
-import { isTokenExpired } from "../lib/security";
+import { isTokenExpired, getTokenTimestamp } from "../lib/security";
 import { ADMIN_BASE } from "../constants";
 
 const SESSION_CHECK_INTERVAL = 60_000; // 1분마다 체크 (5분 → 1분으로 단축)
@@ -37,8 +37,7 @@ export function useAuth(options?: { onExpired?: () => void }): UseAuthReturn {
     }
 
     // 만료 10분 전 경고
-    const parts = token.split("-");
-    const ts = parseInt(parts[parts.length - 1], 10);
+    const ts = getTokenTimestamp(token);
     if (!isNaN(ts)) {
       const remaining = SESSION_MAX_AGE - (Date.now() - ts);
       setIsSessionExpiring(remaining < 10 * 60 * 1000);

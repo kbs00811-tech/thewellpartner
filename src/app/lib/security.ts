@@ -136,9 +136,20 @@ export function isValidEmail(email: string): boolean {
 }
 
 // ──── 세션 토큰 유효성 ────
-export function isTokenExpired(token: string, maxAgeMs: number = 24 * 60 * 60 * 1000): boolean {
+/**
+ * 토큰에서 발급 타임스탬프(ms) 추출.
+ * - 레거시: twp-{userId}-{ts}            → 마지막 세그먼트
+ * - 서명:   twp-{userId}-{ts}-{hmac64}   → 마지막은 HMAC(64 hex) → ts는 뒤에서 2번째
+ */
+export function getTokenTimestamp(token: string): number {
   const parts = token.split("-");
-  const ts = parseInt(parts[parts.length - 1], 10);
+  const last = parts[parts.length - 1];
+  const tsStr = /^[0-9a-f]{64}$/.test(last) ? parts[parts.length - 2] : last;
+  return parseInt(tsStr, 10);
+}
+
+export function isTokenExpired(token: string, maxAgeMs: number = 24 * 60 * 60 * 1000): boolean {
+  const ts = getTokenTimestamp(token);
   if (isNaN(ts)) return true;
   return Date.now() - ts >= maxAgeMs;
 }
