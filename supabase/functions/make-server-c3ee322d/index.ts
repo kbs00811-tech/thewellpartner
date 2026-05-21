@@ -1881,6 +1881,44 @@ app.put(`${BASE}/admin/change-password`, async (c) => {
   } catch (e: any) { return c.json(fail(`비밀번호 변경 오류: ${e.message}`), 500); }
 });
 
+// Admin 아이디 + 비밀번호 변경 (본인 전용) — 현재 비밀번호 확인 필수
+app.put(`${BASE}/admin/change-credentials`, async (c) => {
+  try {
+    const adminUser = c.get("adminUser");
+    if (!adminUser) return c.json(fail("인증이 필요합니다.", "UNAUTHORIZED"), 401);
+    const { currentPassword, newUsername, newPassword } = await c.req.json();
+    if (!currentPassword) return c.json(fail("현재 비밀번호를 입력해주세요.", "VALIDATION"), 400);
+    const user = await db.findById("admin_users", adminUser.id);
+    if (!user) return c.json(fail("사용자를 찾을 수 없습니다.", "NOT_FOUND"), 404);
+    const match = await db.verifyPassword(currentPassword, user.password_hash);
+    if (!match) return c.json(fail("현재 비밀번호가 올바르지 않습니다.", "INVALID_PASSWORD"), 400);
+
+    const updates: any = { ...user, updated_at: db.now() };
+    let changed: string[] = [];
+
+    const nu = (newUsername || "").trim();
+    if (nu && nu !== user.username) {
+      if (nu.length < 3) return c.json(fail("아이디는 3자 이상이어야 합니다.", "VALIDATION"), 400);
+      const all = await db.findAll("admin_users");
+      if (all.some((u: any) => u.username === nu && u.id !== user.id)) {
+        return c.json(fail("이미 사용 중인 아이디입니다.", "DUPLICATE_USERNAME"), 409);
+      }
+      updates.username = nu;
+      changed.push("아이디");
+    }
+    if (newPassword) {
+      if (newPassword.length < 8) return c.json(fail("새 비밀번호는 8자 이상이어야 합니다.", "VALIDATION"), 400);
+      updates.password_hash = await db.hashPassword(newPassword);
+      changed.push("비밀번호");
+    }
+    if (changed.length === 0) return c.json(fail("변경할 항목(새 아이디 또는 새 비밀번호)을 입력해주세요.", "VALIDATION"), 400);
+
+    await db.save("admin_users", user.id, updates);
+    await writeAuditLog(c, "계정정보 변경", `${user.name} ${changed.join("/")} 변경`);
+    return c.json(ok({ username: updates.username }, `${changed.join("/")}이(가) 변경되었습니다. 새 정보로 다시 로그인해주세요.`));
+  } catch (e: any) { return c.json(fail(`계정정보 변경 오류: ${e.message}`), 500); }
+});
+
 // Admin badge counts (for sidebar)
 app.get(`${BASE}/admin/badge-counts`, async (c) => {
   try {

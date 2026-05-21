@@ -7,6 +7,7 @@ import { Toaster } from "../../components/ui/sonner";
 import { checkRateLimit, resetRateLimit } from "../../lib/security";
 import { ADMIN_BASE } from "../../constants";
 import { handleSuccess } from "../../lib/error-handler";
+import AccountToolsModal from "./AccountToolsModal";
 
 const RATE_LIMIT_KEY = "admin_login";
 
@@ -22,6 +23,8 @@ export default function AdminLogin() {
   const [otpStep, setOtpStep] = useState(false);
   const [pendingToken, setPendingToken] = useState("");
   const [otpCode, setOtpCode] = useState("");
+  // 계정 도구 모달 (OTP 등록 / 아이디·비번 변경)
+  const [accountTool, setAccountTool] = useState<null | "otp" | "cred">(null);
   const navigate = useNavigate();
 
   // 잠금 카운트다운
@@ -253,6 +256,16 @@ export default function AdminLogin() {
               {loading ? <Loader2 size={18} className="animate-spin" /> : <>로그인<ArrowRight size={18} /></>}
             </button>
           </form>
+          {/* 계정 도구 — Google OTP 등록 / 아이디·비밀번호 변경 */}
+          <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-center gap-3 text-xs">
+            <button type="button" onClick={() => setAccountTool("otp")} className="flex items-center gap-1 text-gray-500 hover:text-[var(--brand-blue)] font-medium">
+              <ShieldCheck size={14} /> Google OTP 등록
+            </button>
+            <span className="text-gray-200">|</span>
+            <button type="button" onClick={() => setAccountTool("cred")} className="flex items-center gap-1 text-gray-500 hover:text-[var(--brand-blue)] font-medium">
+              <KeyRound size={14} /> 아이디·비밀번호 변경
+            </button>
+          </div>
           {/* 개발 환경(localhost)에서만 표시 - 운영 환경 보안을 위해 숨김 */}
           {(typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) && (
             <div className="mt-4 p-3 rounded-xl bg-gray-50 text-xs text-gray-400">
@@ -274,6 +287,7 @@ export default function AdminLogin() {
         <p className="text-center text-xs text-gray-400 mt-6">&copy; 2025 더웰파트너. Admin System v1.0</p>
       </div>
       <Toaster position="top-right" richColors closeButton />
+      {accountTool && <AccountToolsModal mode={accountTool} onClose={() => setAccountTool(null)} />}
     </div>
   );
 }

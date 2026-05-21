@@ -177,6 +177,14 @@ export function changePassword(currentPassword: string, newPassword: string) {
   });
 }
 
+/** 아이디 + 비밀번호 변경 (현재 비밀번호 확인 필수). newUsername/newPassword 중 하나 이상 */
+export function changeCredentials(currentPassword: string, newUsername?: string, newPassword?: string) {
+  return apiFetch("/admin/change-credentials", {
+    method: "PUT",
+    body: JSON.stringify({ currentPassword, newUsername, newPassword }),
+  });
+}
+
 // ──── OTP(2FA) 관리 (로그인 상태에서) ────
 export function otpStatus(): Promise<{ otp_enabled: boolean }> {
   return apiFetch("/admin/otp/status");
