@@ -162,12 +162,9 @@ const DOC_TOKEN_EXPIRY_MS = 30 * 60 * 1000; // 30분
 async function requireAuth(c: any): Promise<{ user: any; role: any } | null> {
   // X-Admin-Token 커스텀 헤더 우선, 없으면 Authorization에서 추출
   const token = c.req.header("X-Admin-Token") || c.req.header("Authorization")?.split(" ")[1] || "";
-  const userId = db.parseAdminToken(token);
+  // HMAC 서명 + 만료 검증 (레거시 토큰은 ENFORCE_SIGNED_TOKENS=false 일 때만 허용)
+  const userId = await db.verifyToken(token, TOKEN_EXPIRY_MS);
   if (!userId) return null;
-  // 토큰 만료 검증
-  const parts = token.split("-");
-  const tokenTimestamp = parseInt(parts[parts.length - 1], 10);
-  if (isNaN(tokenTimestamp) || Date.now() - tokenTimestamp > TOKEN_EXPIRY_MS) return null;
   const user = await db.findById("admin_users", userId);
   if (!user || user.status !== "ACTIVE") return null;
   const role = await db.findById("admin_roles", user.role_id);
@@ -183,18 +180,18 @@ function validateDocToken(token: string): string | null {
   return parts.slice(1, -1).join("-");
 }
 
-// password_hash 제거 헬퍼
+// 민감정보 제거 헬퍼 (password_hash + OTP 시크릿)
 function stripSensitive(user: any) {
   if (!user) return user;
-  const { password_hash, ...safe } = user;
-  return safe;
+  const { password_hash, otp_secret, otp_temp_secret, ...safe } = user;
+  return { ...safe, otp_enabled: !!user.otp_enabled };
 }
 
 // Admin 경로 미들웨어 (로그인/시드/공개 API 제외)
 app.use(`${BASE}/admin/*`, async (c: any, next: any) => {
   const path = c.req.path.replace(BASE, "");
-  // 로그인은 인증 불필요
-  if (path === "/admin/login") return next();
+  // 로그인 / OTP 로그인검증은 인증 불필요 (pendingToken 자체가 자격증명)
+  if (path === "/admin/login" || path === "/admin/otp/verify-login") return next();
   const auth = await requireAuth(c);
   if (!auth) return c.json(fail("인증이 필요합니다. 다시 로그인해주세요.", "UNAUTHORIZED"), 401);
   c.set("adminUser", auth.user);
@@ -374,12 +371,36 @@ async function handleLogin(c: any) {
   const passwordMatch = await db.verifyPassword(password, user.password_hash);
   if (!passwordMatch) { recordLoginFailure(ip); return c.json(fail("아이디 또는 비밀번호가 올바르지 않습니다.", "UNAUTHORIZED"), 401); }
   clearLoginAttempts(ip);
+
+  // 약한(레거시) 해시면 새 PBKDF2 포맷으로 자동 업그레이드
+  if (db.needsRehash(user.password_hash)) {
+    try { user.password_hash = await db.hashPassword(password); } catch (_) { /* 비치명 */ }
+  }
+
+  // 2단계 인증(OTP) 활성 사용자 → 비밀번호만으로는 토큰 미발급, OTP 단계로
+  if (user.otp_enabled && user.otp_secret) {
+    await db.save("admin_users", user.id, { ...user });
+    const pendingToken = await db.signPending(user.id);
+    return c.json(ok({ otpRequired: true, pendingToken }, "OTP 인증이 필요합니다."));
+  }
+
   await db.save("admin_users", user.id, { ...user, last_login_at: db.now() });
   const role = await db.findById("admin_roles", user.role_id);
   const logId = db.generateId();
   await db.save("audit_logs", logId, { id: logId, admin_id: user.id, admin_name: user.name, action: "로그인", details: `${user.username} 로그인 성공`, ip, status: "SUCCESS", created_at: db.now() });
-  const token = `twp-${user.id}-${Date.now()}`;
-  const profile = { id: user.id, username: user.username, name: user.name, email: user.email, role: role?.role_code || "VIEWER", role_name: role?.role_name || "조회", permissions: role?.permissions || [] };
+  const token = await db.signToken(user.id);
+  const profile = { id: user.id, username: user.username, name: user.name, email: user.email, role: role?.role_code || "VIEWER", role_name: role?.role_name || "조회", permissions: role?.permissions || [], otp_enabled: !!user.otp_enabled };
+  return c.json(ok({ user: profile, token, accessToken: token, admin: profile }, "로그인되었습니다."));
+}
+
+// ──── OTP 로그인 검증 (pendingToken + code → 정식 토큰 발급) ────
+async function issueLoginToken(c: any, user: any, ip: string) {
+  await db.save("admin_users", user.id, { ...user, last_login_at: db.now() });
+  const role = await db.findById("admin_roles", user.role_id);
+  const logId = db.generateId();
+  await db.save("audit_logs", logId, { id: logId, admin_id: user.id, admin_name: user.name, action: "로그인", details: `${user.username} 로그인 성공(2FA)`, ip, status: "SUCCESS", created_at: db.now() });
+  const token = await db.signToken(user.id);
+  const profile = { id: user.id, username: user.username, name: user.name, email: user.email, role: role?.role_code || "VIEWER", role_name: role?.role_name || "조회", permissions: role?.permissions || [], otp_enabled: true };
   return c.json(ok({ user: profile, token, accessToken: token, admin: profile }, "로그인되었습니다."));
 }
 
@@ -390,10 +411,85 @@ app.post(`${BASE}/admin/login`, async (c) => {
   try { return await handleLogin(c); } catch (e: any) { return c.json(fail(`로그인 오류: ${e.message}`, "LOGIN_ERROR"), 500); }
 });
 
+// ──── OTP(2FA) ────
+const OTP_PENDING_EXPIRY_MS = 5 * 60 * 1000; // 5분
+
+// 로그인 2단계: pendingToken + 6자리 코드 → 정식 토큰 (인증 미들웨어 제외 경로)
+app.post(`${BASE}/admin/otp/verify-login`, async (c) => {
+  try {
+    const ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+    const rateCheck = checkLoginRateLimit(ip);
+    if (!rateCheck.allowed) return c.json(fail(`시도 횟수를 초과했습니다. ${rateCheck.retryAfterSec}초 후 다시 시도해주세요.`, "RATE_LIMITED"), 429);
+    const { pendingToken, code } = await c.req.json();
+    const userId = await db.verifyPending(pendingToken || "", OTP_PENDING_EXPIRY_MS);
+    if (!userId) { recordLoginFailure(ip); return c.json(fail("인증 세션이 만료되었습니다. 다시 로그인해주세요.", "OTP_EXPIRED"), 401); }
+    const user = await db.findById("admin_users", userId);
+    if (!user || user.status !== "ACTIVE" || !user.otp_enabled || !user.otp_secret) {
+      return c.json(fail("OTP 인증을 진행할 수 없습니다.", "OTP_UNAVAILABLE"), 400);
+    }
+    const valid = await db.verifyTotp(user.otp_secret, code || "");
+    if (!valid) { recordLoginFailure(ip); return c.json(fail("인증 코드가 올바르지 않습니다.", "OTP_INVALID"), 401); }
+    clearLoginAttempts(ip);
+    return await issueLoginToken(c, user, ip);
+  } catch (e: any) { return c.json(fail(`OTP 검증 오류: ${e.message}`, "OTP_ERROR"), 500); }
+});
+
+// 현재 OTP 상태
+app.get(`${BASE}/admin/otp/status`, async (c) => {
+  try {
+    const adminUser = c.get("adminUser");
+    const user = await db.findById("admin_users", adminUser.id);
+    return c.json(ok({ otp_enabled: !!user?.otp_enabled }));
+  } catch (e: any) { return c.json(fail(e.message), 500); }
+});
+
+// OTP 설정 시작 — 임시 시크릿 생성 + QR용 otpauth URI 반환
+app.post(`${BASE}/admin/otp/setup`, async (c) => {
+  try {
+    const adminUser = c.get("adminUser");
+    const user = await db.findById("admin_users", adminUser.id);
+    if (!user) return c.json(fail("사용자를 찾을 수 없습니다.", "NOT_FOUND"), 404);
+    const secret = db.generateOtpSecret();
+    await db.save("admin_users", user.id, { ...user, otp_temp_secret: secret });
+    const uri = db.otpauthUri(secret, user.username || user.email || user.id);
+    return c.json(ok({ secret, otpauthUri: uri }, "인증앱에 등록 후 코드를 입력해 활성화하세요."));
+  } catch (e: any) { return c.json(fail(`OTP 설정 오류: ${e.message}`), 500); }
+});
+
+// OTP 활성화 — 임시 시크릿으로 코드 검증 후 확정
+app.post(`${BASE}/admin/otp/enable`, async (c) => {
+  try {
+    const adminUser = c.get("adminUser");
+    const { code } = await c.req.json();
+    const user = await db.findById("admin_users", adminUser.id);
+    if (!user || !user.otp_temp_secret) return c.json(fail("먼저 OTP 설정을 시작해주세요.", "NO_TEMP"), 400);
+    const valid = await db.verifyTotp(user.otp_temp_secret, code || "");
+    if (!valid) return c.json(fail("인증 코드가 올바르지 않습니다. 시간이 동기화됐는지 확인하세요.", "OTP_INVALID"), 400);
+    await db.save("admin_users", user.id, { ...user, otp_secret: user.otp_temp_secret, otp_enabled: true, otp_temp_secret: undefined });
+    await writeAuditLog(c, "2FA 활성화", `${user.name} OTP 2단계 인증 활성화`);
+    return c.json(ok(null, "2단계 인증이 활성화되었습니다."));
+  } catch (e: any) { return c.json(fail(`OTP 활성화 오류: ${e.message}`), 500); }
+});
+
+// OTP 비활성화 — 현재 비밀번호 확인 필수
+app.post(`${BASE}/admin/otp/disable`, async (c) => {
+  try {
+    const adminUser = c.get("adminUser");
+    const { password } = await c.req.json();
+    const user = await db.findById("admin_users", adminUser.id);
+    if (!user) return c.json(fail("사용자를 찾을 수 없습니다.", "NOT_FOUND"), 404);
+    const match = await db.verifyPassword(password || "", user.password_hash);
+    if (!match) return c.json(fail("비밀번호가 올바르지 않습니다.", "INVALID_PASSWORD"), 400);
+    await db.save("admin_users", user.id, { ...user, otp_secret: undefined, otp_enabled: false, otp_temp_secret: undefined });
+    await writeAuditLog(c, "2FA 비활성화", `${user.name} OTP 2단계 인증 해제`);
+    return c.json(ok(null, "2단계 인증이 해제되었습니다."));
+  } catch (e: any) { return c.json(fail(`OTP 해제 오류: ${e.message}`), 500); }
+});
+
 // ──── 공통 인증정보 조회 핸들러 (중복 제거) ────
 async function handleAuthMe(c: any) {
-  const token = c.req.header("Authorization")?.split(" ")[1] || "";
-  const userId = db.parseAdminToken(token);
+  const token = c.req.header("X-Admin-Token") || c.req.header("Authorization")?.split(" ")[1] || "";
+  const userId = await db.verifyToken(token, TOKEN_EXPIRY_MS);
   if (!userId) return c.json(fail("인증 토큰이 유효하지 않습니다.", "UNAUTHORIZED"), 401);
   const user = await db.findById("admin_users", userId);
   if (!user) return c.json(fail("사용자를 찾을 수 없습니다.", "UNAUTHORIZED"), 401);

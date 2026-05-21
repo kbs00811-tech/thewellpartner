@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import * as api from "../../lib/api";
 import { handleError, handleSuccess } from "../../lib/error-handler";
+import AccountSecurityCard from "./AccountSecurityCard";
 
 type Tab = "company" | "notification" | "email" | "social" | "seo" | "security";
 
@@ -451,6 +452,8 @@ export default function AdminSettings() {
       {/* ═══ TAB: 보안/서류 ═══ */}
       {activeTab === "security" && (
         <div className="space-y-6 max-w-4xl">
+          <AccountSecurityCard />
+
           <SectionCard icon={Lock} iconBg="rgba(239,68,68,0.1)" iconColor="#ef4444" title="로그인 보안" desc="관리자 로그인 보안 설정">
             <div className="grid md:grid-cols-2 gap-4">
               <InputField data={s} onChange={u} label="최대 로그인 시도 횟수" keyName="login_max_attempts" placeholder="5" />

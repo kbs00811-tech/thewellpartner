@@ -152,9 +152,19 @@ export async function login(username: string, password: string) {
     method: "POST",
     body: JSON.stringify({ username: username.trim(), password }),
   });
-  const user = data.user;
-  const token = data.token;
-  setAuth(token, user);
+  // 2단계 인증 대상이면 토큰 미발급 — OTP 단계로 (pendingToken 반환)
+  if (data?.otpRequired) return data;
+  setAuth(data.token, data.user);
+  return data;
+}
+
+/** OTP 로그인 2단계: pendingToken + 6자리 코드 → 정식 토큰 발급 */
+export async function verifyOtpLogin(pendingToken: string, code: string) {
+  const data = await apiFetch("/admin/otp/verify-login", {
+    method: "POST",
+    body: JSON.stringify({ pendingToken, code: code.trim() }),
+  });
+  setAuth(data.token, data.user);
   return data;
 }
 
@@ -165,6 +175,20 @@ export function changePassword(currentPassword: string, newPassword: string) {
     method: "PUT",
     body: JSON.stringify({ currentPassword, newPassword }),
   });
+}
+
+// ──── OTP(2FA) 관리 (로그인 상태에서) ────
+export function otpStatus(): Promise<{ otp_enabled: boolean }> {
+  return apiFetch("/admin/otp/status");
+}
+export function otpSetup(): Promise<{ secret: string; otpauthUri: string }> {
+  return apiFetch("/admin/otp/setup", { method: "POST" });
+}
+export function otpEnable(code: string) {
+  return apiFetch("/admin/otp/enable", { method: "POST", body: JSON.stringify({ code: code.trim() }) });
+}
+export function otpDisable(password: string) {
+  return apiFetch("/admin/otp/disable", { method: "POST", body: JSON.stringify({ password }) });
 }
 
 // ──── Seed ────

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { Eye, EyeOff, Lock, User, ArrowRight, Loader2, ShieldAlert } from "lucide-react";
+import { Eye, EyeOff, Lock, User, ArrowRight, Loader2, ShieldAlert, ShieldCheck, KeyRound } from "lucide-react";
 import * as api from "../../lib/api";
 import { Logo } from "../../components/Logo";
 import { Toaster } from "../../components/ui/sonner";
@@ -18,6 +18,10 @@ export default function AdminLogin() {
   const [loading, setLoading] = useState(false);
   const [seedStatus, setSeedStatus] = useState("");
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
+  // OTP 2단계
+  const [otpStep, setOtpStep] = useState(false);
+  const [pendingToken, setPendingToken] = useState("");
+  const [otpCode, setOtpCode] = useState("");
   const navigate = useNavigate();
 
   // 잠금 카운트다운
@@ -50,7 +54,14 @@ export default function AdminLogin() {
 
     setLoading(true);
     try {
-      await api.login(username.trim(), password);
+      const data = await api.login(username.trim(), password);
+      if (data?.otpRequired) {
+        // 2단계 인증 필요 — OTP 입력 단계로 전환
+        setPendingToken(data.pendingToken);
+        setOtpStep(true);
+        resetRateLimit(RATE_LIMIT_KEY);
+        return;
+      }
       resetRateLimit(RATE_LIMIT_KEY);
       navigate(ADMIN_BASE);
     } catch (err: any) {
@@ -73,6 +84,31 @@ export default function AdminLogin() {
     } finally {
       setLoading(false);
       setSeedStatus("");
+    }
+  };
+
+  const handleOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!/^\d{6}$/.test(otpCode.trim())) {
+      setError("6자리 인증 코드를 입력해주세요.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.verifyOtpLogin(pendingToken, otpCode);
+      navigate(ADMIN_BASE);
+    } catch (err: any) {
+      setError(err.message || "인증 코드 확인에 실패했습니다.");
+      // 세션 만료 시 처음부터
+      if (err.code === "OTP_EXPIRED") {
+        setOtpStep(false);
+        setPendingToken("");
+        setOtpCode("");
+        setPassword("");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -110,6 +146,53 @@ export default function AdminLogin() {
         </div>
 
         <div className="bg-white rounded-2xl p-8 shadow-xl shadow-blue-900/5 border border-gray-100">
+          {otpStep ? (
+            <form onSubmit={handleOtpSubmit} className="space-y-5">
+              <div className="flex flex-col items-center text-center">
+                <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mb-3">
+                  <ShieldCheck size={24} className="text-blue-600" />
+                </div>
+                <h2 className="font-bold text-lg" style={{ color: "var(--brand-navy)" }}>2단계 인증</h2>
+                <p className="text-sm text-gray-500 mt-1">인증 앱(Google Authenticator 등)에 표시된<br />6자리 코드를 입력하세요.</p>
+              </div>
+              {error && (
+                <div className="p-3 rounded-xl bg-red-50 text-red-600 text-sm font-medium flex items-start gap-2">
+                  <ShieldAlert size={16} className="flex-shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+              )}
+              <div className="relative">
+                <KeyRound size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300" />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoFocus
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 text-center text-2xl tracking-[0.5em] font-mono focus:outline-none focus:border-[var(--brand-blue)] focus:ring-2 focus:ring-[var(--brand-sky)] transition-all"
+                  placeholder="000000"
+                  autoComplete="one-time-code"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-white font-semibold transition-all hover:shadow-lg hover:shadow-blue-500/25 disabled:opacity-50"
+                style={{ backgroundColor: "var(--brand-blue)" }}
+              >
+                {loading ? <Loader2 size={18} className="animate-spin" /> : <>인증 완료<ArrowRight size={18} /></>}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setOtpStep(false); setOtpCode(""); setPendingToken(""); setPassword(""); setError(""); }}
+                className="w-full text-sm text-gray-400 hover:text-gray-600"
+              >
+                ← 처음으로
+              </button>
+            </form>
+          ) : (
+          <>
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
               <div className="p-3 rounded-xl bg-red-50 text-red-600 text-sm font-medium flex items-start gap-2">
@@ -184,6 +267,8 @@ export default function AdminLogin() {
                 시드 데이터 강제 초기화
               </button>
             </div>
+          )}
+          </>
           )}
         </div>
         <p className="text-center text-xs text-gray-400 mt-6">&copy; 2025 더웰파트너. Admin System v1.0</p>
