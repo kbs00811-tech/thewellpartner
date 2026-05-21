@@ -788,7 +788,7 @@ async def process_attendance_elcomtec(
             "leave": {"filled_employees": 0, "missing": [], "skipped": True},
             "validation": {},
             "validation_ok": True,
-            "review_count": len(res["review_list"]),
+            "review_count": len(res["review_list"]) + len(res.get("candidate_rows", [])),
         }
         from urllib.parse import quote
         encoded_summary = json.dumps(result_summary, ensure_ascii=False)
