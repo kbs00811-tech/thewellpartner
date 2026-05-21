@@ -45,6 +45,7 @@ const AdminBillingImport = lazy(() => import("./pages/admin/AdminBillingImport")
 const AdminAttendanceImport = lazy(() => import("./pages/admin/AdminAttendanceImport"));
 const AdminDataCleanup = lazy(() => import("./pages/admin/AdminDataCleanup"));
 const AdminPayslipBatch = lazy(() => import("./pages/admin/AdminPayslipBatch"));
+const AdminAccountSecurity = lazy(() => import("./pages/admin/AdminAccountSecurity"));
 
 export const router = createBrowserRouter([
   {
@@ -85,6 +86,7 @@ export const router = createBrowserRouter([
       { path: "documents/templates", Component: AdminDocuments },
       { path: "statistics", Component: AdminStatistics },
       { path: "settings", Component: AdminSettings },
+      { path: "account-security", Component: AdminAccountSecurity },
       { path: "erp", Component: AdminErp },
       { path: "erp/clients", Component: AdminErp },
       { path: "erp/sites", Component: AdminErp },

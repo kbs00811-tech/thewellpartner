@@ -52,6 +52,7 @@ const companyMenuItems: MenuItem[] = getActiveCompanies().map((c) => ({
 
 const menuItems: MenuItem[] = [
   { name: "대시보드", path: A, icon: LayoutDashboard },
+  { name: "🔐 내 계정 보안 (OTP 등록)", path: `${A}/account-security`, icon: Shield },
   {
     name: "홈페이지 관리", icon: Globe, permKey: "website",
     children: [
