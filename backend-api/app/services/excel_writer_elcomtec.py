@@ -41,7 +41,7 @@ REVIEW_SHEET = "연차_반차_후보검토"
 MAX_ANNUAL_PER_MONTH = 1
 MAX_BANCHA_PER_MONTH = 2
 STD_START, STD_END = 8.5, 17.5      # 08:30 ~ 17:30
-LUNCH_START, LUNCH_END = 12.5, 13.5  # 12:30 ~ 13:30
+LUNCH_START, LUNCH_END = 12.0, 13.0  # 점심 12:00 ~ 13:00 (엘컴텍)
 BANCHA_MIN, BANCHA_MAX = 4.0, 4.5    # 조퇴 반차 인정 부족시간 범위
 
 
@@ -219,16 +219,23 @@ def fill_attendance_sheet_elcomtec(
         annual_cnt = 0
         bancha_cnt = 0
         annual_days: set = set()
+        absent_wd: list = []     # 평일 결근 (day, col, rec)
+        worked_short: list = []  # 부족 근무 (day, col, sf, is_jotwe, rec)
 
+        def cand(rec, day, verdict, value, msg, sf=None):
+            candidate_rows.append({
+                "직원명": name, "날짜": f"{year}-{month:02d}-{day:02d}", "PDF출결": rec.get("출결") or "",
+                "인정근무시간": rec.get("간") or "", "지각시간": rec.get("지각") or "", "조퇴시간": rec.get("조퇴") or "",
+                "평일주말": "평일", "입사일": str(hire or ""), "퇴사일": str(resign or ""),
+                "연차잔여": round(available - used_quota, 2), "자동판단": verdict, "입력값": value, "검토메시지": msg})
+
+        # ── Pass A: 근무/토/일 입력 + 결근·부족 수집 ──
         for day in day_nums:
             rec = days[day]
             col = DAY_TO_COL.get(day)
             if not col:
                 continue
             gb = rec.get("구분"); ot = rec.get("출결")
-            date_str = f"{year}-{month:02d}-{day:02d}"
-            dow = get_dow(year, month, day)
-            day_date = datetime.date(year, month, day)
             start = rec.get("인정출근") if rec.get("인정출근") is not None else rec.get("실출근")
             end = rec.get("인정퇴근") if rec.get("인정퇴근") is not None else rec.get("실퇴근")
 
@@ -242,59 +249,11 @@ def fill_attendance_sheet_elcomtec(
                     if rec.get("평_야간") and safe_set_value(ws, r_심야, col, rec["평_야간"], log):
                         filled += 1
                     sf = _shortfall(start, end)
-                    is_jotwe = (ot == "조퇴") or (end is not None and end <= 13.6)
-                    # 반차: 전체월재직 + 잔여≥0.5 + 조퇴 부족 4~4.5h + 월≤2건
-                    if (full_month and is_jotwe and BANCHA_MIN <= sf <= BANCHA_MAX
-                            and bancha_cnt < MAX_BANCHA_PER_MONTH and (available - used_quota) >= 0.5):
-                        safe_set_value_with_protection(ws, r_연장, col, "반차", log, review, name, date_str, "반차_충돌")
-                        bancha_cnt += 1; used_quota += 0.5; filled += 1
-                        counters["반차_자동적용"] += 1
-                        candidate_rows.append({
-                            "직원명": name, "날짜": date_str, "PDF출결": ot or "조퇴",
-                            "인정근무시간": rec.get("간") or "", "지각시간": rec.get("지각") or "", "조퇴시간": rec.get("조퇴") or "",
-                            "평일주말": "평일", "입사일": str(hire or ""), "퇴사일": str(resign or ""),
-                            "연차잔여": round(available - used_quota, 2), "자동판단": "반차",
-                            "입력값": "기본8/연장=반차/지각조퇴 빈칸", "검토메시지": f"조퇴 부족 {sf}h(반차 수준) → 반차 자동, 연차내역 -0.5"})
-                    elif sf > 0:
-                        if safe_set_value(ws, r_지각조퇴, col, -sf, log):
-                            filled += 1; counters["지각조퇴_입력"] += 1
-                        candidate_rows.append({
-                            "직원명": name, "날짜": date_str, "PDF출결": ot or "지각/조퇴",
-                            "인정근무시간": rec.get("간") or "", "지각시간": rec.get("지각") or "", "조퇴시간": rec.get("조퇴") or "",
-                            "평일주말": "평일", "입사일": str(hire or ""), "퇴사일": str(resign or ""),
-                            "연차잔여": round(available - used_quota, 2), "자동판단": "지각조퇴",
-                            "입력값": f"지각조퇴={-sf}", "검토메시지": f"출근{rec.get('인정출근')}/퇴근{rec.get('인정퇴근')} 기준 부족 {sf}h"})
+                    if sf > 0:
+                        is_jotwe = (ot == "조퇴") or (end is not None and end <= 13.6)
+                        worked_short.append((day, col, sf, is_jotwe, rec))
                 else:  # 평일 결근
-                    if is_mid_joiner or is_mid_leaver:
-                        counters["중도입퇴사_연차반차제외"] += 1
-                        candidate_rows.append({
-                            "직원명": name, "날짜": date_str, "PDF출결": ot or "결근",
-                            "인정근무시간": "", "지각시간": "", "조퇴시간": "",
-                            "평일주말": "평일", "입사일": str(hire or ""), "퇴사일": str(resign or ""),
-                            "연차잔여": round(available - used_quota, 2), "자동판단": "중도입퇴사-제외",
-                            "입력값": "(미입력)", "검토메시지": "중도입사/퇴사자 → 연차·반차 자동처리 제외(결근/빈칸)"})
-                    elif full_month and annual_cnt < MAX_ANNUAL_PER_MONTH and (available - used_quota) >= 1:
-                        if safe_set_value(ws, r_기본, col, 8, log):
-                            filled += 1
-                        if safe_set_value_with_protection(ws, r_연장, col, "연차", log, review, name, date_str, "연차_충돌"):
-                            filled += 1
-                        annual_cnt += 1; used_quota += 1; annual_days.add(day)
-                        counters["연차_자동적용"] += 1
-                        candidate_rows.append({
-                            "직원명": name, "날짜": date_str, "PDF출결": ot or "결근",
-                            "인정근무시간": "", "지각시간": "", "조퇴시간": "",
-                            "평일주말": "평일", "입사일": str(hire or ""), "퇴사일": str(resign or ""),
-                            "연차잔여": round(available - used_quota, 2), "자동판단": "연차",
-                            "입력값": "기본8/연장=연차", "검토메시지": "평일결근+잔여연차 → 연차 자동(월 1개 한도), 연차내역 -1"})
-                    else:
-                        counters["미인정결근"] += 1
-                        why = "월 연차한도(1) 초과" if annual_cnt >= MAX_ANNUAL_PER_MONTH else ("잔여연차 없음" if (available - used_quota) < 1 else "보류")
-                        candidate_rows.append({
-                            "직원명": name, "날짜": date_str, "PDF출결": ot or "결근",
-                            "인정근무시간": "", "지각시간": "", "조퇴시간": "",
-                            "평일주말": "평일", "입사일": str(hire or ""), "퇴사일": str(resign or ""),
-                            "연차잔여": round(available - used_quota, 2), "자동판단": "결근",
-                            "입력값": "(미입력)", "검토메시지": f"연차 미적용({why}) → 결근(주휴 제외)"})
+                    absent_wd.append((day, col, rec))
 
             elif gb == "무휴":  # 토요일
                 hb = rec.get("휴_기본")
@@ -311,6 +270,41 @@ def fill_attendance_sheet_elcomtec(
                         filled += 1; counters["일요일_특근입력"] += 1
                     if rec.get("휴_연장") and safe_set_value(ws, r_특잔, col, rec["휴_연장"], log):
                         filled += 1
+
+        # ── 연차 배정 (월 최대 1개, 첫 평일결근, 중도입퇴사 제외) ──
+        for (day, col, rec) in absent_wd:
+            if is_mid_joiner or is_mid_leaver:
+                counters["중도입퇴사_연차반차제외"] += 1
+                cand(rec, day, "중도입퇴사-제외", "(미입력)", "중도입사/퇴사자 → 연차·반차 자동 제외(결근/빈칸)")
+            elif full_month and annual_cnt < MAX_ANNUAL_PER_MONTH and (available - used_quota) >= 1:
+                if safe_set_value(ws, r_기본, col, 8, log):
+                    filled += 1
+                if safe_set_value_with_protection(ws, r_연장, col, "연차", log, review, name, f"{year}-{month:02d}-{day:02d}", "연차_충돌"):
+                    filled += 1
+                annual_cnt += 1; used_quota += 1; annual_days.add(day)
+                counters["연차_자동적용"] += 1
+                cand(rec, day, "연차", "기본8/연장=연차", "평일결근+잔여연차 → 연차 자동(월 1개 한도), 연차내역 -1")
+            else:
+                counters["미인정결근"] += 1
+                why = "월 연차한도(1) 초과" if annual_cnt >= MAX_ANNUAL_PER_MONTH else ("잔여연차 없음" if (available - used_quota) < 1 else "보류")
+                cand(rec, day, "결근", "(미입력)", f"연차 미적용({why}) → 결근(주휴 제외)")
+
+        # ── 반차/지각조퇴 (연차 우선: 연차 사용한 직원은 그 달 반차 금지) ──
+        for (day, col, sf, is_jotwe, rec) in worked_short:
+            can_bancha = (annual_cnt == 0 and full_month and not is_mid_joiner and not is_mid_leaver
+                          and is_jotwe and BANCHA_MIN <= sf <= BANCHA_MAX
+                          and bancha_cnt < MAX_BANCHA_PER_MONTH and (available - used_quota) >= 0.5)
+            if can_bancha:
+                if safe_set_value_with_protection(ws, r_연장, col, "반차", log, review, name, f"{year}-{month:02d}-{day:02d}", "반차_충돌"):
+                    filled += 1
+                bancha_cnt += 1; used_quota += 0.5
+                counters["반차_자동적용"] += 1
+                cand(rec, day, "반차", "기본8/연장=반차/지각조퇴 빈칸", f"조퇴 부족 {sf}h(반차 수준) → 반차 자동, 연차내역 -0.5", sf)
+            else:
+                if safe_set_value(ws, r_지각조퇴, col, -sf, log):
+                    filled += 1; counters["지각조퇴_입력"] += 1
+                note = "연차 사용월(반차 금지) → 지각조퇴" if (annual_cnt > 0 and is_jotwe and BANCHA_MIN <= sf <= BANCHA_MAX) else f"출근{rec.get('인정출근')}/퇴근{rec.get('인정퇴근')} 기준 부족 {sf}h"
+                cand(rec, day, "지각조퇴", f"지각조퇴={-sf}", note, sf)
 
         # 주휴 개근(연차 인정 포함)
         for day in day_nums:
